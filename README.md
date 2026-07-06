@@ -8,7 +8,7 @@ A premium, ambient dark-mode home automation command center designed for multi-p
 
 The system is fully containerized and broken down into isolated service meshes routed natively via Nginx:
 
-* **🖥️ Kiosk Interface (`/kiosk`):** Hard-locked portrait dimension configuration tailored perfectly for a dedicated vertical 15.6" monitor hallway assembly.
+* **🖥️ Kiosk Interface (`/kiosk`):** Hard-locked portrait dimension configuration tailored perfectly for a dedicated vertical 1080p monitor.
 * **📱 Mobile Web Client (`/dashboard`):** Fluid, glassmorphic (`backdrop-filter`) auto-wrapping card array matching the kiosk aesthetic while adjusting flawlessly to handheld touch screens.
 * **🤖 Telegram Bot Dispatcher:** A Python-driven SQLite backend layer acting as a remote management pipeline. Interacts with the family on the go to inject custom sticky notes, manipulate real-time grocery lists, and handle calendar adjustments.
 * **📡 Async MQTT Service Broker:** The real-time messaging highway utilizing Mosquitto to stream state changes across layouts instantly.
@@ -204,6 +204,132 @@ actions:
       retain: true
       payload: '{"Father":"{{ states("person.father") | title }}","Mother":"{{ states("person.mother") | title }}","Kids":"{{ states("person.kids") | title }}"}'
 ```
+
+Here is the complete dictionary of command triggers and keywords your Telegram Dispatch Bot listens for.
+
+Your bot relies on regular expressions (re.search and pattern matching) to parse your messages. It doesn't matter if you type them in UPPERCASE, lowercase, or Sentence Case—the backend handles them cleanly.
+
+🛒 1. Smart Grocery & Shopping List
+To manage the shopping list, the bot looks for phrases at the very beginning of your message or lines starting with structural list symbols.
+
+Add Items: 
+```
+* buy  (e.g., buy milk and bread)
+
+need  (e.g., need eggs)
+
+add to shopping list 
+
+add to shopping 
+
+add to grocery 
+
+add to groceries 
+
+add  (when used as a single word or general prefix)
+
+List symbols (Multi-line parsing): Starting a line with -, *, ▫️, or • will instantly split and add those lines as individual groceries.
+
+Remove / Delete Items:
+
+remove  (e.g., remove milk)
+
+delete 
+
+bought 
+
+clear shopping list or clear shopping (Wipes the entire list clean)
+```
+📅 2. Family Schedule & Appointments
+The bot splits calendar inputs into two categories: Explicit dates (handled locally by your SQLite database) and Dynamic relative adjustments (shipped to Home Assistant).
+
+Add Permanent Calendar Entries:
+```
+schedule  (e.g., schedule dentist on 12/07 at 3pm)
+
+appt 
+
+appointment 
+
+event 
+
+calendar 
+
+Key parsing triggers inside the text: The bot scans the message for date patterns like DD/MM, DD-MM, or explicitly stated keywords like at, on, or pm/am to separate the event name from its timestamp.
+
+Remove / Cancel Appointments:
+
+cancel schedule  (followed by the item index number or text fragment)
+
+cancel appt 
+
+cancel appointment 
+
+delete schedule 
+
+delete appt 
+
+clear appointments or clear schedule (Wipes the local manual entries)
+```
+📋 3. Active Sticky Notes
+Sticky notes act as broadcast notices for the family. They display at the bottom of the layout until explicitly removed.
+
+Add Pinned Notes:
+```
+note  (e.g., note: plumber arriving tomorrow morning)
+
+memo 
+
+remind 
+
+sticky 
+
+Remove / Archive Notes:
+
+remove note  (followed by the item index number, e.g., remove note 1)
+
+delete note 
+
+clear notes (Wipes all pinned notices instantly)
+```
+🍽️ 4. Ad-Hoc Meal & Food Planning
+Your bot features an automated static baseline (the WEEKLY_MEAL_PLAN array inside your frontend bundle), but you can dynamically overwrite any specific day using Telegram commands.
+
+Override Daily Menu:
+```
+menu  (e.g., menu monday burgers)
+
+eat  (e.g., eat friday pizza take out)
+
+food 
+
+meal 
+
+Target Day Keywords: The bot evaluates the word immediately following your food trigger to see which day slot to modify. It accepts:
+
+monday / mon
+
+tuesday / tue
+
+wednesday / wed
+
+thursday / thu
+
+friday / fri
+
+saturday / sat
+
+sunday / sun
+
+today / tomorrow (Automatically resolves into the exact day of the week based on your server clock)
+
+Reset to Defaults:
+
+clear menu or clear meal plan (Removes database overrides and falls right back to your default hardcoded structural rotation layout)
+```
+🛠️ 5. General Utility & Diagnostics
+/start – Greets you, builds baseline database structures if they're missing, and prints a helpful instructional layout map directly into your chat window.
+
 
 🔐 Security & Safety Notice
 All sensitive database entries (*.db), persistent system logs (logs/), localized runtime keys (.env), and security credentials directories (mosquitto/config/passwd) are explicitly managed by standard root boundaries and strictly filtered out via the workspace .gitignore array.
