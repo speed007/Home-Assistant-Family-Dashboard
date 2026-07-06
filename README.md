@@ -42,45 +42,38 @@ family-dashboard/
 ├── db.py                    # Local SQLite3 Persistent Storage Handler
 ├── ha_automations.yaml      # Jinja2 Home Assistant Automation Payloads
 └── requirements.txt         # Python Engine Dependencies
-
-
-
+```
 
 🚀 Deployment Guide
 1. Prerequisites
 Ensure you have Docker and Docker Compose installed on your host server machine:
-
 ```
 curl -fsSL [https://get.docker.com](https://get.docker.com) -o get-docker.sh
 sudo sh get-docker.sh
-
+```
 
 2. Environment Configurations
 Create a local .env configuration template in the root directory (Note: This file is intentionally hidden from Git tracking for protection):
-
 ```
 TELEGRAM_BOT_TOKEN=your_secure_api_token_here
 MQTT_BROKER_HOST=Your_MQTT_Broker_IP
 MQTT_BROKER_PORT=1883
 MQTT_WS_PORT=9001
-
+```
 3. Spin Up the Container Infrastructure
 Compile your deployment profile production assets and start the system containers detached:
 
 # Build frontend assets via Vite
-
 ```
 cd dashboard && npm install && npm run build && cd ..
-
+```
 # Launch core runtime structures
-
 ```
 docker compose up -d --build
-
+```
 📡 Integrations
 Home Assistant Prayer Times Sync Payload
 The layout receives flat JSON data payloads over the home/dashboard/prayer_times topic. Use the following dynamic automation configuration inside Home Assistant to broadcast automatically at midnight and system boots:
-
 ```
 alias: "Dashboard: Sync Prayer Times"
 mode: single
@@ -95,6 +88,7 @@ actions:
       topic: home/dashboard/prayer_times
       retain: true
       payload: '{"Fajr":"{{ as_timestamp(states("sensor.salah_fajr"), default=0) | timestamp_custom("%I:%M %p", true, "12:00 AM") }}","Dhuhr":"{{ as_timestamp(states("sensor.salah_dhuhr"), default=0) | timestamp_custom("%I:%M %p", true, "12:00 AM") }}","Asr":"{{ as_timestamp(states("sensor.salah_asr"), default=0) | timestamp_custom("%I:%M %p", true, "12:00 AM") }}","Maghrib":"{{ as_timestamp(states("sensor.salah_maghrib"), default=0) | timestamp_custom("%I:%M %p", true, "12:00 AM") }}","Isha":"{{ as_timestamp(states("sensor.salah_isha"), default=0) | timestamp_custom("%I:%M %p", true, "12:00 AM") }}"}'
+```
 
 🔐 Security & Safety Notice
 All sensitive database entries (*.db), persistent system logs (logs/), localized runtime keys (.env), and security credentials directories (mosquitto/config/passwd) are explicitly managed by standard root boundaries and strictly filtered out via the workspace .gitignore array.
