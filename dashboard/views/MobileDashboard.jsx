@@ -44,16 +44,6 @@ const MobileDashboard = () => {
       clean: true,
       reconnectPeriod: 1000,
     });
-  
-  
-  // useEffect(() => {
-  //   const client = mqtt.connect('ws://192.168.102.112:9001', //mqtt broker IP address
-  //   {
-  //     username: 'mqtt-user', // mqtt broker usename
-  //     password: 'mqtt-user', // mqtt broker password
-  //     clean: true,
-  //     reconnectPeriod: 1000,
-  //   });
 
     client.on('connect', () => {
       setConnected(true);
