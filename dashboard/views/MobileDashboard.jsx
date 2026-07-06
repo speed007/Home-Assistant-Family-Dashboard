@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import mqtt from 'mqtt';
+import mqtt from 'mqtt/mqtt';
+import React from 'react';
 
 const WEEKLY_MEAL_PLAN = {
   monday: ["Moong Daal - Mugdhon", "Yellow moong Daal", "Kitchdi - Ringru/KARI-Potatoe", "Khatta binda", "KIDNEY BEANS", "SARAGWO"],
@@ -31,13 +33,27 @@ const MobileDashboard = () => {
     Fajr: '02:36 AM', Dhuhr: '01:11 PM', Asr: '06:51 PM', Maghrib: '09:32 PM', Isha: '10:37 PM'
   });
 
+  const MQTT_BROKER = process.env.REACT_APP_MQTT_BROKER_WS || 'ws://192.168.102.112:9001';
+  const MQTT_USER = process.env.REACT_APP_MQTT_USER || 'mqtt-user';
+  const MQTT_PASS = process.env.REACT_APP_MQTT_PASS || 'mqtt-user';
+
   useEffect(() => {
-    const client = mqtt.connect('ws://192.168.102.112:9001', {
-      username: 'mqtt-user',
-      password: 'mqtt-user',
+    const client = mqtt.connect(MQTT_BROKER, {
+      username: MQTT_USER,
+      password: MQTT_PASS,
       clean: true,
       reconnectPeriod: 1000,
     });
+  
+  
+  // useEffect(() => {
+  //   const client = mqtt.connect('ws://192.168.102.112:9001', //mqtt broker IP address
+  //   {
+  //     username: 'mqtt-user', // mqtt broker usename
+  //     password: 'mqtt-user', // mqtt broker password
+  //     clean: true,
+  //     reconnectPeriod: 1000,
+  //   });
 
     client.on('connect', () => {
       setConnected(true);
