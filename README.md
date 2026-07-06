@@ -2,11 +2,16 @@
 
 A premium, ambient dark-mode home automation command center designed for multi-profile layouts. This ecosystem handles dual-frontend presentation layers seamlessly syncing via an asynchronous MQTT pipeline connected to Home Assistant integrations and a Telegram chatbot orchestration layer.
 
----
+## Please Note 
+You will need to create a bot in your Telegram account, many tutorials are out there. You will need TELEGRAM_BOT_TOKEN and TARGET_CHAT_ID to be put into .env file, use the files provided with -example and just remove "-example" from them and they are good to go with your own details.
+
+## Where to run?
+I am running this on a proxmox LXC instance but you can run on Raspbery Pi from Zero 2W upto Pi 5! 
+You can also run on an old pc/laptop. The project really doesnt need much resources.
+* For Kiosk LCD screen/monitor in Portrait mode, all it would need is a sigle webpage of "http://yourIntance'sIP:8080/kiosk" this can be run on Pi Zero W2 with dietPi and chromium which would launch at startup without any desktop with above url, this is 1080p portrait setup. 
+* You can access non kiosk dashboard at "http://yourIntance'sIP:8080/dashboard" From any PC/Laptop, Mobile Phone or Tablet.
 
 ## ⚡ Architecture Overview
-
-The system is fully containerized and broken down into isolated service meshes routed natively via Nginx:
 
 * **🖥️ Kiosk Interface (`/kiosk`):** Hard-locked portrait dimension configuration tailored perfectly for a dedicated vertical 1080p monitor.
 * **📱 Mobile Web Client (`/dashboard`):** Fluid, glassmorphic (`backdrop-filter`) auto-wrapping card array matching the kiosk aesthetic while adjusting flawlessly to handheld touch screens.
