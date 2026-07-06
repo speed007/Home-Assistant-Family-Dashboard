@@ -56,9 +56,15 @@ sudo sh get-docker.sh
 Create a local .env configuration template in the root directory (Note: This file is intentionally hidden from Git tracking for protection):
 ```
 TELEGRAM_BOT_TOKEN=your_secure_api_token_here
-MQTT_BROKER_HOST=Your_MQTT_Broker_IP
-MQTT_BROKER_PORT=1883
-MQTT_WS_PORT=9001
+MQTT_BROKER=your_mqtt_broker_ip
+MQTT_PORT=1883
+MQTT_USER=your_mqtt_username
+MQTT_PASS=your_mqtt_password
+```
+# Optional — enables forwarding sticky notes to Home Assistant as events
+```
+HA_URL=http://your-ha-instance:8123
+HA_TOKEN=your_long_lived_ha_token
 ```
 3. Spin Up the Container Infrastructure
 Compile your deployment profile production assets and start the system containers detached:
@@ -72,6 +78,7 @@ cd dashboard && npm install && npm run build && cd ..
 docker compose up -d --build
 ```
 📡 Integrations
+
 Home Assistant Prayer Times Sync Payload
 The layout receives flat JSON data payloads over the home/dashboard/prayer_times topic. Use the following dynamic automation configuration inside Home Assistant to broadcast automatically at midnight and system boots:
 ```
@@ -88,6 +95,119 @@ actions:
       topic: home/dashboard/prayer_times
       retain: true
       payload: '{"Fajr":"{{ as_timestamp(states("sensor.salah_fajr"), default=0) | timestamp_custom("%I:%M %p", true, "12:00 AM") }}","Dhuhr":"{{ as_timestamp(states("sensor.salah_dhuhr"), default=0) | timestamp_custom("%I:%M %p", true, "12:00 AM") }}","Asr":"{{ as_timestamp(states("sensor.salah_asr"), default=0) | timestamp_custom("%I:%M %p", true, "12:00 AM") }}","Maghrib":"{{ as_timestamp(states("sensor.salah_maghrib"), default=0) | timestamp_custom("%I:%M %p", true, "12:00 AM") }}","Isha":"{{ as_timestamp(states("sensor.salah_isha"), default=0) | timestamp_custom("%I:%M %p", true, "12:00 AM") }}"}'
+```
+Dashboard: Sync Weather Data Automation
+
+```
+alias: "Dashboard: Sync Weather Data"
+description: ""
+triggers:
+  - entity_id: weather.forecast_home
+    trigger: state
+actions:
+  - data:
+      topic: home/dashboard/weather
+      retain: true
+      payload: |-
+        {
+          "temperature": {{ state_attr('weather.forecast_home', 'temperature') | default('—', true) }},
+          "condition": "{{ states('weather.forecast_home') | default('Clear', true) }}",
+          "feels_like": {{ state_attr('weather.forecast_home', 'apparent_temperature') | default('—', true) }}
+        }
+    action: mqtt.publish
+```
+Dashboard: Sync Multiple Calendars to MQTT
+replace with your own calendars' data!
+
+```
+alias: "Dashboard: Sync Multiple Calendars to MQTT"
+description: >-
+  Pulls upcoming appointments from both AK and wife calendars, merges them, and
+  publishes to the React Dashboard.
+triggers:
+  - trigger: time_pattern
+    minutes: /15
+  - trigger: homeassistant
+    event: start
+actions:
+  - action: calendar.get_events
+    target:
+      entity_id: calendar.husband
+    data:
+      duration:
+        days: 7
+    response_variable: husband_agenda
+  - action: calendar.get_events
+    target:
+      entity_id: calendar.wife
+    data:
+      duration:
+        days: 7
+    response_variable: wife_agenda
+  - action: mqtt.publish
+    data:
+      topic: home/dashboard/calendar_events
+      retain: true
+      payload: >-
+        {% set ns = namespace(combined=[]) %}
+
+        {# Loop through AK Calendar events and tag them #} {% if
+        ak_agenda['calendar.husband'] is defined %}
+          {% for event in ak_agenda['calendar.husband'].events %}
+            {% set start_dt = as_datetime(event.start) %}
+            {% set date_str = start_dt.strftime('%Y-%m-%d') %}
+            {% if event.start is string and event.start | length == 10 %}
+              {% set time_str = "All Day" %}
+            {% else %}
+              {% set time_str = start_dt.strftime('%H:%M') %}
+            {% endif %}
+            {% set ns.combined = ns.combined + [{"title": "[Husband] " ~ event.summary, "date": date_str, "time": time_str}] %}
+          {% endfor %}
+        {% endif %}
+
+        {# Loop through wife Calendar events and tag them #} {% if
+        wife_agenda['calendar.wife'] is defined %}
+          {% for event in wife_agenda['calendar.wife'].events %}
+            {% set start_dt = as_datetime(event.start) %}
+            {% set date_str = start_dt.strftime('%Y-%m-%d') %}
+            {% if event.start is string and event.start | length == 10 %}
+              {% set time_str = "All Day" %}
+            {% else %}
+              {% set time_str = start_dt.strftime('%H:%M') %}
+            {% endif %}
+            {% set ns.combined = ns.combined + [{"title": "[Wife] " ~ event.summary, "date": date_str, "time": time_str}] %}
+          {% endfor %}
+        {% endif %}
+
+        {# Sort the merged list chronologically by their event dates #} {% set
+        sorted_events = ns.combined | sort(attribute='date') %}
+
+        {{ {"events": sorted_events} | to_json }}
+mode: restart
+
+```
+Dashboard: Sync Presence Status
+
+```
+alias: "Dashboard: Sync Presence Status"
+description: ""
+triggers:
+  - entity_id:
+      - person.father
+      - person.mother
+      - person.kids
+    trigger: state
+actions:
+  - data:
+      topic: home/dashboard/presence
+      retain: true
+      payload: |-
+        {
+          "Father": "{{ states('person.father') | title }}",
+          "Mother": "{{ states('person.mother') | title }}",
+          "Kids": "{{ states('person.kids') | title }}"
+        }
+    action: mqtt.publish
 ```
 
 🔐 Security & Safety Notice
