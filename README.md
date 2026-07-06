@@ -205,7 +205,7 @@ actions:
       payload: '{"Father":"{{ states("person.father") | title }}","Mother":"{{ states("person.mother") | title }}","Kids":"{{ states("person.kids") | title }}"}'
 ```
 
-Here is the complete dictionary of command triggers and keywords your Telegram Dispatch Bot listens for.
+## 🤖 Here is the complete dictionary of command triggers and keywords your Telegram Dispatch Bot listens for.
 
 Your bot relies on regular expressions (re.search and pattern matching) to parse your messages. It doesn't matter if you type them in UPPERCASE, lowercase, or Sentence Case—the backend handles them cleanly.
 
