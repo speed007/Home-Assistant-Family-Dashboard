@@ -78,7 +78,7 @@ Compile your deployment profile production assets and start the system container
 
 # Build frontend assets via Vite
 ```
-cd dashboard && npm install && npm run build && cd ..
+cd dashboard && npm install && npm install npx && npx run build && cd ..
 ```
 # Launch core runtime structures
 ```
