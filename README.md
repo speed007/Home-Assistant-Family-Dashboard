@@ -5,7 +5,7 @@ Disclaimer: I am not a programmer! I do this as a hobby and because I like to br
 A premium, ambient dark-mode home automation command center designed for multi-profile layouts. This ecosystem handles dual-frontend presentation layers seamlessly syncing via an asynchronous MQTT pipeline connected to Home Assistant integrations and a Telegram chatbot orchestration layer.
 
 ## Telegram Integration Notes 
-You will need to create a Bot in your Telegram account, many tutorials are out there. You will need TELEGRAM_BOT_TOKEN and TARGET_CHAT_ID to be put into .env file, use the files provided with -example and just remove "-example" from them and they are good to go with your own details.
+You will need to create a Bot in your Telegram account, many tutorials are out there. You will need TELEGRAM_BOT_TOKEN to be put into .env file, use the files provided with -example and just remove "-example" from them and they are good to go with your own details.
 Once your Telegram Bot is up and runnig you can add it to your existing family group or better still create a new group for this dashboard and add members, also make sure you make the Bot admin to have access to your group messages where the Bot is added. 
 
 ## Where to run?
@@ -74,7 +74,7 @@ Compile your deployment profile production assets and start the system container
 
 ## Build frontend assets via Vite
 ```
-cd dashboard && npm install && npm install npx && npx run build && cd ..
+cd dashboard && npm install && npm install npx && npx vite build && cd ..
 ```
 ## Launch core runtime structures
 ```
