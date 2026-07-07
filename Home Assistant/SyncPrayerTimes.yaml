@@ -1,0 +1,13 @@
+alias: "Dashboard: Sync Prayer Times"
+mode: single
+triggers:
+  - at: "00:05:00"
+    trigger: time
+  - event: start
+    trigger: homeassistant
+actions:
+  - action: mqtt.publish
+    data:
+      topic: home/dashboard/prayer_times
+      retain: true
+      payload: '{"Fajr":"{{ as_timestamp(states("sensor.salah_fajr"), default=0) | timestamp_custom("%I:%M %p", true, "12:00 AM") }}","Dhuhr":"{{ as_timestamp(states("sensor.salah_dhuhr"), default=0) | timestamp_custom("%I:%M %p", true, "12:00 AM") }}","Asr":"{{ as_timestamp(states("sensor.salah_asr"), default=0) | timestamp_custom("%I:%M %p", true, "12:00 AM") }}","Maghrib":"{{ as_timestamp(states("sensor.salah_maghrib"), default=0) | timestamp_custom("%I:%M %p", true, "12:00 AM") }}","Isha":"{{ as_timestamp(states("sensor.salah_isha"), default=0) | timestamp_custom("%I:%M %p", true, "12:00 AM") }}"}'

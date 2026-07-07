@@ -1,0 +1,64 @@
+alias: "Dashboard: Sync Multiple Calendars to MQTT"
+description: >-
+  Pulls upcoming appointments from both AK and wife calendars, merges them, and
+  publishes to the React Dashboard.
+triggers:
+  - trigger: time_pattern
+    minutes: /15
+  - trigger: homeassistant
+    event: start
+actions:
+  - action: calendar.get_events
+    target:
+      entity_id: calendar.husband
+    data:
+      duration:
+        days: 7
+    response_variable: husband_agenda
+  - action: calendar.get_events
+    target:
+      entity_id: calendar.wife
+    data:
+      duration:
+        days: 7
+    response_variable: wife_agenda
+  - action: mqtt.publish
+    data:
+      topic: home/dashboard/calendar_events
+      retain: true
+      payload: >-
+        {% set ns = namespace(combined=[]) %}
+
+        {# Loop through AK Calendar events and tag them #} {% if
+        ak_agenda['calendar.husband'] is defined %}
+          {% for event in ak_agenda['calendar.husband'].events %}
+            {% set start_dt = as_datetime(event.start) %}
+            {% set date_str = start_dt.strftime('%Y-%m-%d') %}
+            {% if event.start is string and event.start | length == 10 %}
+              {% set time_str = "All Day" %}
+            {% else %}
+              {% set time_str = start_dt.strftime('%H:%M') %}
+            {% endif %}
+            {% set ns.combined = ns.combined + [{"title": "[Husband] " ~ event.summary, "date": date_str, "time": time_str}] %}
+          {% endfor %}
+        {% endif %}
+
+        {# Loop through wife Calendar events and tag them #} {% if
+        wife_agenda['calendar.wife'] is defined %}
+          {% for event in wife_agenda['calendar.wife'].events %}
+            {% set start_dt = as_datetime(event.start) %}
+            {% set date_str = start_dt.strftime('%Y-%m-%d') %}
+            {% if event.start is string and event.start | length == 10 %}
+              {% set time_str = "All Day" %}
+            {% else %}
+              {% set time_str = start_dt.strftime('%H:%M') %}
+            {% endif %}
+            {% set ns.combined = ns.combined + [{"title": "[Wife] " ~ event.summary, "date": date_str, "time": time_str}] %}
+          {% endfor %}
+        {% endif %}
+
+        {# Sort the merged list chronologically by their event dates #} {% set
+        sorted_events = ns.combined | sort(attribute='date') %}
+
+        {{ {"events": sorted_events} | to_json }}
+mode: restart

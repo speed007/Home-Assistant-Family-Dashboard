@@ -1,0 +1,16 @@
+alias: "Dashboard: Sync Weather Data"
+description: ""
+triggers:
+  - entity_id: weather.forecast_home
+    trigger: state
+actions:
+  - data:
+      topic: home/dashboard/weather
+      retain: true
+      payload: |-
+        {
+          "temperature": {{ state_attr('weather.forecast_home', 'temperature') | default('—', true) }},
+          "condition": "{{ states('weather.forecast_home') | default('Clear', true) }}",
+          "feels_like": {{ state_attr('weather.forecast_home', 'apparent_temperature') | default('—', true) }}
+        }
+    action: mqtt.publish
