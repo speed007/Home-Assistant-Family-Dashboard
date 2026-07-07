@@ -11,7 +11,8 @@ Once your Telegram Bot is up and runnig you can add it to your existing family g
 ## Where to run?
 I am running this on a proxmox LXC instance but you can run on Raspbery Pi from Zero 2W upto Pi 5! 
 You can also run on an old pc/laptop. The project really doesnt need much resources.
-* For Kiosk LCD screen/monitor in Portrait mode, all it would need is a sigle webpage of "http://yourIntance'sIP:8080/kiosk" this can be run on Pi Zero W2 with dietPi and chromium which would launch at startup without any desktop with above url, this is 1080p portrait setup. 
+* For Kiosk LCD screen/monitor in Portrait mode, all it would need is a sigle webpage of "http://yourIntance'sIP:8080/kiosk" this can be run on Pi Zero W2 with dietPi OS and Cog Browser by following PiZero2W_KioskSetupGuide.pdf, which would launch at startup without any desktop with above url, this setup uses about 350mb of RAM and few % of CPU! This is 1080p portrait setup.
+  
 * You can access non kiosk dashboard at "http://yourIntance'sIP:8080/dashboard" From any PC/Laptop, Mobile Phone or Tablet.
 
 ## ⚡ Architecture Overview
