@@ -35,23 +35,6 @@ You can also run on an old pc/laptop. The project really doesnt need much resour
 
 ---
 
-## 📦 Directory Structure
-
-```text
-family-dashboard/
-├── dashboard/               # React + Vite Frontend Client App
-│   ├── src/                 # Application Entry and Components
-│   └── views/               # Multi-profile View Layouts (Kiosk / Mobile UI)
-├── mosquitto/               # MQTT Broker Workspace Data & Access Controls
-├── logs/                    # Engine runtime log volumes
-├── docker-compose.yml       # Complete Container Multi-Service Spec
-├── nginx.conf               # Custom Reverse Proxy Configuration Layer
-├── telegram_bot.py          # Python Chatbot Dispatcher Core
-├── db.py                    # Local SQLite3 Persistent Storage Handler
-├── ha_automations.yaml      # Jinja2 Home Assistant Automation Payloads
-└── requirements.txt         # Python Engine Dependencies
-```
-
 🚀 Deployment Guide
 1. Prerequisites
 Ensure you have Docker and Docker Compose installed on your host server machine:
@@ -61,7 +44,8 @@ sudo sh get-docker.sh
 ```
 
 2. Environment Configurations
-Create a local .env configuration template in the root directory (Note: This file is intentionally hidden from Git tracking for protection):
+Rename a local .env-example to .env configuration template in the root directory, file contains credentials as below.
+
 ```
 TELEGRAM_BOT_TOKEN=your_secure_api_token_here
 MQTT_BROKER=your_mqtt_broker_ip
@@ -73,10 +57,22 @@ MQTT_PASS=your_mqtt_password
 Compile your deployment profile production assets and start the system containers detached:
 
 ## Build frontend assets via Vite
+rename the .env-example to .env, this needs credentials as below
+```
+VITE_MQTT_BROKER_WS=ws://mqtt-ip-address:9001
+VITE_MQTT_USER=mqtt_user
+VITE_MQTT_PASS=mqtt_password
+```
+Input your credentials in above .env file which is in "dashboard" folder/dir, save the file and then run below command while you are in the "family-dashboard" folder/dir.
+
+it will cd to "dashboard" folder/dir and will build the react app.
+
 ```
 cd dashboard && npm install && npm install npx && npx vite build && cd ..
 ```
 ## Launch core runtime structures
+
+Rename the meal_plan.json-example to meal_plan.json and update as your own weekely meal plan.
 
 This must run inside the folder/dir  "family-dashboard"
 ```
