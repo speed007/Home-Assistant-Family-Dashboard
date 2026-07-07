@@ -15,6 +15,10 @@ services:
     volumes:
       - ./data:/data
       - ./logs:/var/log
+      # Read-only: the bot only reads this at startup (WEEKLY_MEAL_PLAN is
+      # loaded once at import time). Edit meal_plan.json on the host then
+      # `docker compose restart telegram-bot` to pick up changes.
+      - ./meal_plan.json:/app/meal_plan.json:ro
     networks:
       - home-automation
     depends_on:
@@ -42,7 +46,7 @@ services:
     environment:
       - TZ=UTC
 
-  # Serves the built React dashboard (dashboard.jsx -> npm run build -> ./dashboard/build)
+  # Serves the built React dashboard (dashboard.jsx -> npx vite build -> ./dashboard/build)
   # as plain static files. Point FullPageOS (or any kiosk browser) at
   # http://<this-host-ip>:8080 - not at Home Assistant's own :8123 URL.
   dashboard-web:
@@ -53,7 +57,7 @@ services:
       - "8080:80"
     volumes:
       - ./dashboard/build:/usr/share/nginx/html:ro
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro  # 🎯 Add this line here
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
     networks:
       - home-automation
 

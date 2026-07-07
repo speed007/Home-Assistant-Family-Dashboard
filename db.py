@@ -144,6 +144,12 @@ def get_meals() -> dict:
         return {r["day_key"]: r["meal_text"] for r in rows}
 
 
+def clear_meals():
+    with _connect() as conn:
+        conn.execute("DELETE FROM meal_overrides")
+        conn.commit()
+
+
 # --------------------------------------------------------------------- Notes
 
 def add_daily_note(text: str, author: str):

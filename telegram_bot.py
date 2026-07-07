@@ -19,17 +19,29 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# httpx logs full request URLs at INFO level, which includes the bot token
+# (https://api.telegram.org/bot<TOKEN>/...) — silence it so the token never
+# ends up in logs, log-shipping, or screenshots.
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 HA_URL = os.getenv("HA_URL")
 HA_TOKEN = os.getenv("HA_TOKEN")
+# Entity ID of a "Local Calendar" helper in HA (Settings -> Devices & Services
+# -> Add Integration -> Local Calendar). This is what makes appointment
+# push-to-calendar possible: HA's read-only calendar platforms (Google
+# Calendar, CalDAV, etc.) generally don't support event creation via the API,
+# but Local Calendar entities do.
+HA_CALENDAR_ENTITY = os.getenv("HA_CALENDAR_ENTITY", "calendar.family_events")
 
 MQTT_BROKER = os.getenv("MQTT_BROKER")
 MQTT_PORT_RAW = os.getenv("MQTT_PORT")
 MQTT_USER = os.getenv("MQTT_USER")
 MQTT_PASS = os.getenv("MQTT_PASS")
 
+# Required config — no hardcoded fallbacks. A missing value fails loudly and
+# specifically at startup rather than silently connecting to a wrong broker
+# or limping along with a guessable default credential.
 _REQUIRED = {
     "TELEGRAM_BOT_TOKEN": TELEGRAM_TOKEN,
     "MQTT_BROKER": MQTT_BROKER,
@@ -38,18 +50,28 @@ _REQUIRED = {
     "MQTT_PASS": MQTT_PASS,
 }
 
+
 def _check_required_env():
     missing = [name for name, value in _REQUIRED.items() if not value]
     if missing:
-        raise RuntimeError(
-            "🚫 Missing required .env variable(s): " + ", ".join(missing)
+        logger.critical(
+            "🚫 Missing required .env variable(s): %s — check your .env file against .env-example.",
+            ", ".join(missing),
         )
+        raise SystemExit(1)
+
 
 _check_required_env()
-MQTT_PORT = int(MQTT_PORT_RAW)
+
+try:
+    MQTT_PORT = int(MQTT_PORT_RAW)
+except ValueError:
+    logger.critical(f"🚫 MQTT_PORT must be a number, got: {MQTT_PORT_RAW!r}")
+    raise SystemExit(1)
 
 # Path to external meal configuration file
 MEAL_PLAN_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "meal_plan.json")
+
 
 def load_weekly_meal_plan():
     try:
@@ -58,11 +80,16 @@ def load_weekly_meal_plan():
                 logger.info("🍽️ Successfully loaded external weekly meal plan configuration.")
                 return json.load(f)
         else:
-            logger.warning("⚠️ meal_plan.json not found! Falling back to empty menu defaults.")
+            logger.warning(
+                "⚠️ meal_plan.json not found at %s! Falling back to empty menu defaults. "
+                "Copy meal_plan.json-example to meal_plan.json and mount it (see docker-compose.yml).",
+                MEAL_PLAN_PATH,
+            )
             return {}
     except Exception as e:
         logger.error(f"❌ Failed to parse meal_plan.json: {e}")
         return {}
+
 
 WEEKLY_MEAL_PLAN = load_weekly_meal_plan()
 
@@ -84,14 +111,137 @@ def parse_uk_date(date_str: str) -> str | None:
 
 def trigger_ha_note_event(text: str, author: str):
     if not HA_URL or not HA_TOKEN:
+        # HA note-forwarding is optional. Log once per call at debug level
+        # rather than staying completely silent, so a misconfigured .env
+        # doesn't look identical to "feature intentionally unused" in logs.
+        logger.debug("HA_URL/HA_TOKEN not set — skipping HA note-forward event.")
         return
     try:
         url = f"{HA_URL}/api/events/telegram_note_posted"
         headers = {"Authorization": f"Bearer {HA_TOKEN}", "Content-Type": "application/json"}
         payload = {"message": text, "sender": author}
-        requests.post(url, headers=headers, json=payload, timeout=5)
+        response = requests.post(url, headers=headers, json=payload, timeout=5)
+        if response.status_code in (200, 201):
+            logger.info(f"🔔 Dispatched event to HA for author: {author}")
+        else:
+            logger.warning(f"HA note-forward returned status {response.status_code}: {response.text[:200]}")
     except Exception as e:
         logger.error(f"Failed to forward event packet to HA: {e}")
+
+
+def sync_shopping_to_ha(item: str, action: str):
+    """
+    Mirrors an add/remove into HA's built-in Shopping List integration
+    (entity shopping_list.shopping_list), so it's visible/speakable through
+    the Home Assistant Smart Home Alexa skill ("Alexa, what's on my
+    shopping list?" / "Alexa, add milk to my shopping list").
+
+    action: "add" or "remove"
+
+    Known limitation: HA's shopping_list integration has no bulk-clear
+    service exposed over the REST API (only per-item add/remove, plus a
+    "clear completed items" service that only affects items already marked
+    done). Bulk operations like "clear shopping" therefore do NOT sync to
+    HA automatically — clear it there separately via voice or the app if
+    you want both lists empty.
+    """
+    if not HA_URL or not HA_TOKEN:
+        logger.debug("HA_URL/HA_TOKEN not set — skipping HA shopping list sync.")
+        return
+    if action not in ("add", "remove"):
+        logger.error(f"sync_shopping_to_ha called with invalid action: {action!r}")
+        return
+    service = "add_item" if action == "add" else "remove_item"
+    try:
+        url = f"{HA_URL}/api/services/shopping_list/{service}"
+        headers = {"Authorization": f"Bearer {HA_TOKEN}", "Content-Type": "application/json"}
+        payload = {"name": item}
+        response = requests.post(url, headers=headers, json=payload, timeout=5)
+        if response.status_code in (200, 201):
+            logger.info(f"🛒 Synced '{item}' ({action}) to HA shopping list.")
+        else:
+            logger.warning(
+                f"HA shopping_list.{service} returned {response.status_code}: {response.text[:200]}"
+            )
+    except Exception as e:
+        logger.error(f"Failed to sync shopping item '{item}' to HA: {e}")
+
+
+def _parse_time_to_24h(time_str: str) -> str | None:
+    """Parses free-text times like '3pm', '3:30pm', '15:00' into 'HH:MM'."""
+    cleaned = time_str.strip().lower().replace(" ", "")
+    match = re.match(r"^(\d{1,2})(?::(\d{2}))?(am|pm)?$", cleaned)
+    if not match:
+        return None
+    hour_s, minute_s, meridiem = match.groups()
+    hour, minute = int(hour_s), int(minute_s) if minute_s else 0
+    if meridiem == "pm" and hour != 12:
+        hour += 12
+    elif meridiem == "am" and hour == 12:
+        hour = 0
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return None
+    return f"{hour:02d}:{minute:02d}"
+
+
+def push_appointment_to_ha_calendar(title: str, date: str | None, time: str | None):
+    """
+    Creates a matching event on a HA "Local Calendar" helper entity
+    (HA_CALENDAR_ENTITY, default calendar.family_events) so existing Alexa
+    reminder automations that watch that calendar (e.g.
+    alexa_appointment_day_before / alexa_appointment_hour_before in
+    ha_automations.yaml) fire for appointments added via Telegram — exactly
+    as they did before appointments moved into the bot's own SQLite store.
+
+    Setup required in HA (one-time): Settings -> Devices & Services ->
+    Add Integration -> "Local Calendar" -> name it so its entity_id matches
+    HA_CALENDAR_ENTITY. Read-only calendar platforms (Google Calendar,
+    CalDAV) do NOT support event creation via the API, so this only works
+    against a Local Calendar helper, not your existing synced calendars.
+
+    Known limitation: there is no supported HA API to delete a single
+    calendar event, so cancelling an appointment via Telegram removes it
+    from the bot/dashboard but NOT from this HA calendar — remove it there
+    manually if that matters.
+    """
+    if not HA_URL or not HA_TOKEN:
+        logger.debug("HA_URL/HA_TOKEN not set — skipping HA calendar push.")
+        return
+    if not date:
+        logger.info(
+            f"Appointment '{title}' has no date — skipping HA calendar push "
+            "(Alexa day-before/hour-before reminders need a concrete date)."
+        )
+        return
+
+    try:
+        payload = {"entity_id": HA_CALENDAR_ENTITY, "summary": title}
+        if time:
+            time_24h = _parse_time_to_24h(time)
+            if time_24h:
+                start_dt = f"{date}T{time_24h}:00"
+                end_dt = (datetime.fromisoformat(start_dt) + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S")
+                payload["start_date_time"] = start_dt
+                payload["end_date_time"] = end_dt
+            else:
+                logger.warning(f"Couldn't parse time '{time}' for HA calendar push — creating as all-day instead.")
+                payload["start_date"] = date
+                payload["end_date"] = date
+        else:
+            payload["start_date"] = date
+            payload["end_date"] = date
+
+        url = f"{HA_URL}/api/services/calendar/create_event"
+        headers = {"Authorization": f"Bearer {HA_TOKEN}", "Content-Type": "application/json"}
+        response = requests.post(url, headers=headers, json=payload, timeout=5)
+        if response.status_code in (200, 201):
+            logger.info(f"📅 Pushed '{title}' to HA calendar ({HA_CALENDAR_ENTITY}).")
+        else:
+            logger.warning(
+                f"HA calendar.create_event returned {response.status_code}: {response.text[:200]}"
+            )
+    except Exception as e:
+        logger.error(f"Failed to push appointment '{title}' to HA calendar: {e}")
 
 
 def publish_to_dashboard(topic: str, payload_dict: dict):
@@ -111,11 +261,14 @@ def publish_to_dashboard(topic: str, payload_dict: dict):
 def publish_shopping():
     publish_to_dashboard("home/dashboard/shopping_list", {"items": db.get_shopping()})
 
+
 def publish_meals():
     publish_to_dashboard("home/dashboard/meal_plan", {"meals": db.get_meals()})
 
+
 def publish_notes():
     publish_to_dashboard("home/dashboard/daily_notes", {"notes": db.get_daily_notes()})
+
 
 def publish_appointments():
     publish_to_dashboard("home/dashboard/manual_appointments", {"events": db.get_appointments()})
@@ -128,8 +281,10 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "It only triggers when messages explicitly begin with family system keywords.\n\n"
         "🛒 *Shopping:* `need milk`, `buy apples`, `add to grocery eggs`\n"
         "📋 *Notes:* `note lock back door`, `memo fix tap`, `sticky grab keys`\n"
-        "📅 *Schedules:* `schedule dentist on 12/07`, `appt 15/07 MOT`\n"
-        "🍽️ *Meals:* `menu monday burgers`, `eat friday pizza`"
+        "📅 *Schedules:* `schedule dentist 12/07 3pm`, `appt 15/07 MOT`\n"
+        "🍽️ *Meals:* `menu monday burgers`, `eat friday pizza`\n\n"
+        "_Every command must be the first word(s) of the message — the bot "
+        "does not scan mid-sentence for these keywords._"
     )
     await update.message.reply_text(welcome_text, parse_mode="Markdown")
 
@@ -148,14 +303,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "cleared shopping", "finished shopping", "emptied shopping", "clear shopping list"
         ]:
             db.clear_shopping()
-            await update.message.reply_text("🛒 Shopping list completely cleared!")
+            await update.message.reply_text(
+                "🛒 Shopping list completely cleared! "
+                + ("(Note: this doesn't clear HA's Alexa shopping list — clear that separately if needed.)"
+                   if HA_URL and HA_TOKEN else "")
+            )
             publish_shopping()
             return
 
         if low_text in ["clear menu", "clear meal plan", "reset menu", "delete menu"]:
-            with db._connect() as conn:
-                conn.execute("DELETE FROM meal_overrides")
-                conn.commit()
+            db.clear_meals()
             await update.message.reply_text("🍽️ Meal overrides cleared! Reverted to default rotation schedule.")
             publish_meals()
             return
@@ -222,9 +379,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(msg, parse_mode="Markdown")
             return
 
-
         # --- STRICT REGEX MATCHERS ---
-        # Added structural lookahead \s+ to require trailing context text so empty commands or chat phrases don't trip it.
+        # Trailing content is required (\s+(.+) not \s*(.*)) so empty/ambient
+        # chat phrases don't accidentally trip a command in a busy group.
         note_match = re.match(r"^(?:note|sticky|remind|remember|memo)\b[,\s]+(.+)", raw_text, re.IGNORECASE)
         buy_match = re.match(r"^(?:buy|add\s+to\s+shopping\s+list|add\s+to\s+shopping|add\s+to\s+grocery|add\s+to\s+groceries|add|get|shop|need|want)(?:\s+some|\s+to|\s+more)?\b[,\s]+(.+)", raw_text, re.IGNORECASE)
         put_on_list_match = re.match(r"^put\b[,\s]+(.+)\s+on\s+(?:the\s+)?list", raw_text, re.IGNORECASE)
@@ -243,7 +400,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             publish_notes()
             return
 
-        # 2. Meal Rotation Overwrite Override Trigger
+        # 2. Meal Rotation Override Trigger
         elif meal_match:
             day_target = meal_match.group(1).lower()
             meal_content = meal_match.group(2).strip()
@@ -260,7 +417,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif remove_match:
             remaining = remove_match.group(1).strip()
 
-            # Sub-parsing target logic block (e.g. "remove appt 3" or "delete note 1")
             appt_rem = re.match(r"^(?:appt|appointment|book|event|schedule|calendar)\b[,\s]+(.+)", remaining, re.IGNORECASE)
             if appt_rem:
                 target = appt_rem.group(1).strip()
@@ -301,11 +457,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if db.delete_shopping_item(remaining):
                 await update.message.reply_text(f"🗑️ Removed '{remaining}' from shopping list.")
                 publish_shopping()
+                sync_shopping_to_ha(remaining, "remove")
             else:
                 await update.message.reply_text(f"❓ '{remaining}' is not on the shopping list.")
             return
 
-        # 4. Schedule Entry Manual Calendar Additions Trigger
+        # 4. Schedule Entry / Manual Calendar Additions Trigger
         elif appt_match:
             rest = appt_match.group(1).strip()
             parts = rest.split(maxsplit=2)
@@ -328,6 +485,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             db.add_appointment(title_val, date=date_val, time=time_val)
             publish_appointments()
+            push_appointment_to_ha_calendar(title_val, date_val, time_val)
             display_when = f"on {date_val}" if date_val else "unscheduled"
             if time_val:
                 display_when += f" at {time_val}"
@@ -336,8 +494,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # 5. Smart Grocery Target List Trigger
         item_to_add = None
-        
-        # Check structural formatting symbols first (multi-line lists)
+
         if raw_text.startswith(('-', '*', '▫️', '•')):
             item_to_add = re.sub(r"^[-\*▫️•]\s*", "", raw_text).strip()
         elif buy_match:
@@ -349,17 +506,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if db.add_shopping(item_to_add):
                 await update.message.reply_text(f"🛒 Added '{item_to_add}' to shopping list.")
                 publish_shopping()
+                sync_shopping_to_ha(item_to_add, "add")
             else:
                 await update.message.reply_text(f"❌ '{item_to_add}' is already on the list!")
             return
 
         # --- SILENT CASCADE DROP ---
-        # If the text falls through to this point, it is treated as normal family conversation.
-        # It gets dropped quietly without executing database actions or responding.
+        # Falls through here = treated as normal family conversation.
+        # Dropped quietly with no DB action and no reply.
         logger.info(f"💬 Ignored group chat conversation line: '{raw_text}'")
 
     except Exception as e:
         logger.exception(f"Unhandled system trace exception during handling: {e}")
+        try:
+            await update.message.reply_text("⚠️ Something went wrong processing that message. Check the bot logs.")
+        except Exception:
+            pass
 
 
 def main():
@@ -377,7 +539,10 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     logger.info("🚀 System boot secured. Telegram Dispatch Bot listening in strict command filter mode...")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    try:
+        app.run_polling(allowed_updates=Update.ALL_TYPES)
+    except Exception as e:
+        logger.critical(f"Polling failed — is another instance already running with the same token? {e}")
 
 
 if __name__ == '__main__':
