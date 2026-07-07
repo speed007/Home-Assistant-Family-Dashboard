@@ -137,4 +137,6 @@ Bulk Clear: Matches clear menu, clear meal plan, reset menu, delete menu.
 ```
 
 🔐 Security & Safety Notice
+
+
 All sensitive database entries (*.db), persistent system logs (logs/), localized runtime keys (.env), and security credentials directories (mosquitto/config/passwd) are explicitly managed by standard root boundaries and strictly filtered out via the workspace .gitignore array.
