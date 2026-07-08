@@ -1,13 +1,13 @@
 [Unit]
-Description=LD2420 Presence → HDMI Power Control
+Description=LD2420 Presence -> HDMI Power Control
 After=local-fs.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 /home/pi/ld2420_hdmi_control.py
+ExecStart=/usr/bin/python3 /home/dietpi/ld2420_hdmi_control.py
 Restart=always
 RestartSec=5
-User=pi
+User=root
 
 [Install]
 WantedBy=multi-user.target
