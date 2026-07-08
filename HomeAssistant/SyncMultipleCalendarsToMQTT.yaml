@@ -30,8 +30,8 @@ actions:
         {% set ns = namespace(combined=[]) %}
 
         {# Loop through AK Calendar events and tag them #} {% if
-        ak_agenda['calendar.husband'] is defined %}
-          {% for event in ak_agenda['calendar.husband'].events %}
+        husband_agenda['calendar.husband'] is defined %}
+          {% for event in husband_agenda['calendar.husband'].events %}
             {% set start_dt = as_datetime(event.start) %}
             {% set date_str = start_dt.strftime('%Y-%m-%d') %}
             {% if event.start is string and event.start | length == 10 %}

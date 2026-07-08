@@ -15,71 +15,10 @@
 # ==================== SHOPPING LIST AUTOMATIONS ====================
 
 # Shopping item added via Telegram - send to HA
-- id: 'telegram_shopping_add'
-  alias: "Telegram: Shopping Item Added"
-  trigger:
-    platform: mqtt
-    topic: "home/telegram/shopping_add"
-  action:
-    - service: shopping_list.add_item
-      data:
-        name: "{{ trigger.payload_json.item }}"
-    # Optional: Send feedback back to Telegram
-    - service: notify.telegram
-      data:
-        message: "✅ {{ trigger.payload_json.added_by }} added '{{ trigger.payload_json.item }}' to shopping list"
 
 # ==================== APPOINTMENT AUTOMATIONS ====================
 
-- id: 'telegram_appointment_add'
-  alias: "Telegram: Appointment Added"
-  trigger:
-    platform: mqtt
-    topic: "home/telegram/appointment_add"
-  action:
-    # Create calendar event in Home Assistant
-    - service: calendar.create_event
-      data:
-        calendar_id: "calendar.family_events"  # Update to your calendar ID
-        summary: "{{ trigger.payload_json.title }}"
-        description: "Added by: {{ trigger.payload_json.added_by }}"
-        start_date_time: >
-          {% set raw_time = trigger.payload_json.time | default('9am') %}
-          {% set date = trigger.payload_json.date %}
-          {# strptime's third arg is a fallback used if parsing fails, instead
-             of raising and aborting the whole template - protects against
-             a malformed/unexpected time string (e.g. "4.30pm") reaching
-             here, whether from unusual phrasing or a bot-side parsing miss #}
-          {% set parsed = strptime(raw_time | replace(' ', ''), '%I:%M%p', strptime('9:00AM', '%I:%M%p')) if ':' in raw_time
-                           else strptime(raw_time | replace(' ', ''), '%I%p', strptime('9AM', '%I%p')) %}
-          {{ date }}T{{ parsed.strftime('%H:%M') }}:00
-        end_date_time: >
-          {% set raw_time = trigger.payload_json.time | default('9am') %}
-          {% set date = trigger.payload_json.date %}
-          {% set parsed = strptime(raw_time | replace(' ', ''), '%I:%M%p', strptime('9:00AM', '%I:%M%p')) if ':' in raw_time
-                           else strptime(raw_time | replace(' ', ''), '%I%p', strptime('9AM', '%I%p')) %}
-          {% set end = parsed + timedelta(hours=1) %}
-          {{ date }}T{{ end.strftime('%H:%M') }}:00
-    # Telegram feedback
-    - service: notify.telegram
-      data:
-        message: "📅 {{ trigger.payload_json.added_by }} added '{{ trigger.payload_json.title }}' for {{ trigger.payload_json.date }}"
-
 # ==================== MEAL PLAN AUTOMATIONS ====================
-
-- id: 'telegram_meal_add'
-  alias: "Telegram: Meal Plan Updated"
-  trigger:
-    platform: mqtt
-    topic: "home/telegram/meal_add"
-  action:
-    # Telegram feedback only - telegram_bot.py's publish_dashboard_snapshot()
-    # job is what actually keeps home/dashboard/meal_plan in sync with the
-    # database every 30s, so HA doesn't need to (and shouldn't) republish
-    # a single-meal payload to that topic itself.
-    - service: notify.telegram
-      data:
-        message: "🍽️ {{ trigger.payload_json.added_by }} added '{{ trigger.payload_json.meal }}' for {{ trigger.payload_json.type }} on {{ trigger.payload_json.date }}"
 
 # ==================== DASHBOARD POWER MANAGEMENT ====================
 
@@ -115,10 +54,9 @@
 
 # NOTE: There are intentionally NO automations here publishing to
 # home/dashboard/shopping_list, home/dashboard/calendar_events, or
-# home/dashboard/meal_plan. telegram_bot.py's publish_dashboard_snapshot()
-# job already publishes all three, sourced from the bot's own SQLite
-# database, every 30s. That job is the single source of truth for all
-# dashboard-facing topics.
+# home/dashboard/meal_plan. telegram_bot.py publishes changes to these topics immediately via the
+# long-lived MQTT client, sourced from the bot's own SQLite database.
+# That is the single source of truth for all dashboard-facing topics.
 #
 # An earlier version of this file had separate time_interval automations
 # publishing home/dashboard/shopping_list from shopping_list.shopping_list
