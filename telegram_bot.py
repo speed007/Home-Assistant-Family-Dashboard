@@ -63,12 +63,19 @@ except ValueError:
 MEAL_PLAN_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "meal_plan.json")
 
 
+_WEEKLY_MEAL_PLAN_CACHE = None
+
+
 def load_weekly_meal_plan():
+    global _WEEKLY_MEAL_PLAN_CACHE
+    if _WEEKLY_MEAL_PLAN_CACHE is not None:
+        return _WEEKLY_MEAL_PLAN_CACHE
     try:
         if os.path.exists(MEAL_PLAN_PATH):
             with open(MEAL_PLAN_PATH, "r", encoding="utf-8") as f:
+                _WEEKLY_MEAL_PLAN_CACHE = json.load(f)
                 logger.info("Successfully loaded external weekly meal plan configuration.")
-                return json.load(f)
+                return _WEEKLY_MEAL_PLAN_CACHE
         else:
             logger.warning(
                 "meal_plan.json not found at %s! Falling back to empty menu defaults. "

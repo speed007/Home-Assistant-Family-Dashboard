@@ -2,13 +2,13 @@ import { useState, useEffect } from 'react';
 import mqtt from 'mqtt';
 
 export const WEEKLY_MEAL_PLAN = {
-  monday: ["Moong Daal - Mugdhon", "Yellow moong Daal", "Kitchdi - Ringru/KARI-Potatoe", "Khatta binda", "KIDNEY BEANS", "SARAGWO"],
-  tuesday: ["Chicken Curry", "Chicken Tikka", "Steamed Chicken", "Grilled Chicken with Mash", "BUTTER CHICKEN"],
-  wednesday: ["Chicken pie", "Pasta", "Sheppards pie", "Jacket potatoe", "LASAGNE"],
-  thursday: ["Fish Curry", "Grilled Fish", "Steamed Fish", "Home made Fish & Chips", "SPINACH + PANEER"],
+  monday: ["Moong Daal - Mugdhon", "Yellow moong Daal", "Kitchdi - Ringru/KARI-Potato", "Khatta bhindi", "Kidney Beans", "Saragwo"],
+  tuesday: ["Chicken Curry", "Chicken Tikka", "Steamed Chicken", "Grilled Chicken with Mash", "Butter Chicken"],
+  wednesday: ["Chicken pie", "Pasta", "Shepherd's pie", "Jacket potato", "Lasagne"],
+  thursday: ["Fish Curry", "Grilled Fish", "Steamed Fish", "Home made Fish & Chips", "Spinach + Paneer"],
   friday: ["Daal Chawal", "Biryani", "Yakni", "Nihaari - Daleem", "Chinese Palau"],
   saturday: ["Chinese", "Pizza", "Take out", "Sausages + mash"],
-  sunday: ["Chip - burger @ Home", "Noodles", "Kebab roll", "Take out"]
+  sunday: ["Chips & burger @ Home", "Noodles", "Kebab roll", "Take out"]
 };
 
 export const PRAYER_ICONS = { Fajr: '\uD83C\uDF05', Dhuhr: '\u2600\uFE0F', Asr: '\uD83C\uDF24\uFE0F', Maghrib: '\uD83C\uDF07', Isha: '\uD83C\uDF19' };

@@ -1,9 +1,9 @@
 {
-  "monday": ["Chiken Curry", "Meat Curry", "KIDNEY BEANS"],
-  "tuesday": ["Chicken Curry", "Chicken Tikka", "Steamed Chicken", "Grilled Chicken with Mash", "BUTTER CHICKEN"],
-  "wednesday": ["Chicken pie", "Pasta", "Sheppards pie", "Jacket potatoe", "LASAGNE"],
-  "thursday": ["Fish Curry", "Grilled Fish", "Steamed Fish", "Home made Fish & Chips", "SPINACH + PANEER"],
-  "friday": ["Chiken Curry", "Meat Curry", "KIDNEY BEANS"],
+  "monday": ["Chicken Curry", "Meat Curry", "Kidney Beans"],
+  "tuesday": ["Chicken Curry", "Chicken Tikka", "Steamed Chicken", "Grilled Chicken with Mash", "Butter Chicken"],
+  "wednesday": ["Chicken pie", "Pasta", "Shepherd's pie", "Jacket potato", "Lasagne"],
+  "thursday": ["Fish Curry", "Grilled Fish", "Steamed Fish", "Home made Fish & Chips", "Spinach + Paneer"],
+  "friday": ["Chicken Curry", "Meat Curry", "Kidney Beans"],
   "saturday": ["Chinese", "Pizza", "Take out", "Sausages + mash"],
-  "sunday": ["Chip - burger @ Home", "Noodles", "Kebab roll", "Take out"]
+  "sunday": ["Chips & burger @ Home", "Noodles", "Kebab roll", "Take out"]
 }
