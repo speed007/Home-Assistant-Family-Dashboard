@@ -1,0 +1,16 @@
+[Unit]
+Description=Family Dashboard LD2420 Presence Daemon
+Documentation=https://github.com/speed007/Home-Assistant-Family-Dashboard
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /home/pi/family-dashboard/presence_daemon.py
+WorkingDirectory=/home/pi/family-dashboard
+Restart=always
+RestartSec=5
+User=pi
+EnvironmentFile=/home/pi/family-dashboard/presence_config.env
+
+[Install]
+WantedBy=multi-user.target

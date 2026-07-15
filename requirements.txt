@@ -2,3 +2,4 @@ python-telegram-bot[job-queue]==21.10
 paho-mqtt==2.1.0
 python-dotenv==1.1.0
 requests==2.32.3
+pyserial>=3.5

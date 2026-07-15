@@ -4,16 +4,16 @@ Disclaimer: I am not a programmer! I do this as a hobby and because I like to br
 
 A premium, ambient dark-mode home automation command center designed for multi-profile layouts. This ecosystem handles dual-frontend presentation layers seamlessly syncing via an asynchronous MQTT pipeline connected to Home Assistant integrations and a Telegram chatbot orchestration layer.
 
-## Telegram Integration Notes 
-You will need to create a Bot in your Telegram account, many tutorials are out there. You will need TELEGRAM_BOT_TOKEN to be put into .env file, use the files provided with -example and just remove "-example" from them and they are good to go with your own details.
-Once your Telegram Bot is up and runnig you can add it to your existing family group or better still create a new group for this dashboard and add members, also make sure you make the Bot admin to have access to your group messages where the Bot is added. 
+## Telegram Integration Notes
+You will need to create a Bot in your Telegram account (many tutorials are out there). Put your `TELEGRAM_BOT_TOKEN` in the root `.env` file — copy `.env-example` to `.env` and fill in your details.
+Once your Telegram Bot is up and running you can add it to your existing family group or better still create a new group for this dashboard and add members, also make sure you make the Bot admin to have access to your group messages where the Bot is added.
 
 ## Where to run?
-I am running this on a proxmox LXC instance but you can run on Raspbery Pi from Zero 2W upto Pi 5! 
+I am running this on a Proxmox LXC instance but you can run on a Raspberry Pi from Zero 2W up to Pi 5!
 You can also run on an old pc/laptop. The project really doesnt need much resources.
-* For Kiosk LCD screen/monitor in Portrait mode, all it would need is a sigle webpage of "http://yourIntance'sIP:8080/kiosk" this can be run on Pi Zero W2 with dietPi OS and Cog Browser by following PiZero2W_KioskSetupGuide.pdf, which would launch at startup without any desktop with above url, this setup uses about 350mb of RAM and few % of CPU! This is 1080p portrait setup.
+* For Kiosk LCD screen/monitor in Portrait mode, all it would need is a single webpage of `http://your-instance-ip:8080/kiosk` this can be run on Pi Zero 2W with dietPi OS and Cog Browser by following `PiZero2W_KioskSetupGuide.pdf`, which would launch at startup without any desktop with above URL. This setup uses about 350 MB of RAM and a few % of CPU! This is a 1080p portrait setup.
   
-* You can access non kiosk dashboard at "http://yourIntance'sIP:8080/dashboard" From any PC/Laptop, Mobile Phone or Tablet.
+* You can access the non-kiosk dashboard at `http://your-instance-ip:8080/dashboard` from any PC, laptop, mobile phone or tablet.
 
 ## ⚡ Architecture Overview
 
@@ -45,49 +45,51 @@ sudo sh get-docker.sh
 ```
 
 2. Environment Configurations
-Rename a local .env-example to .env configuration template in the root directory, file contains credentials as below.
+
+Two `.env` files are needed — one for the backend, one for the frontend.
+
+**Backend `.env` (root directory):**
+Copy `.env-example` to `.env` in the project root and fill in your details:
 
 ```
-TELEGRAM_BOT_TOKEN=your_secure_api_token_here
 MQTT_BROKER=your_mqtt_broker_ip
 MQTT_PORT=1883
 MQTT_USER=your_mqtt_username
 MQTT_PASS=your_mqtt_password
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+HA_URL=http://your-ha-instance:8123
+HA_TOKEN=your_long_lived_ha_token
+TZ=Europe/London
 ```
-3. Spin Up the Container Infrastructure
-Compile your deployment profile production assets and start the system containers detached:
 
-## Build frontend assets via Vite
-rename the .env-example to .env, this needs credentials as below
-```
-VITE_MQTT_BROKER_WS=ws://mqtt-ip-address:9001
-VITE_MQTT_USER=mqtt_user
-VITE_MQTT_PASS=mqtt_password
-```
-Input your credentials in above .env file which is in "dashboard" folder/dir, save the file and then run below command while you are in the "family-dashboard" folder/dir.
-
-it will cd to "dashboard" folder/dir and will build the react app.
+**Frontend `.env` (`dashboard/` directory):**
+Copy `dashboard/.env-example` to `dashboard/.env` and fill in your MQTT WebSocket details:
 
 ```
-cd dashboard && npm install && npm install npx && npx vite build && cd ..
+VITE_MQTT_BROKER_WS=ws://your-mqtt-ip:9001
+VITE_MQTT_USER=your_mqtt_username
+VITE_MQTT_PASS=your_mqtt_password
 ```
-## Launch core runtime structures
 
-Rename the meal_plan.json-example to meal_plan.json and update as your own weekely meal plan.
+3. Build Frontend Assets & Start Containers
 
-This must run inside the folder/dir  "family-dashboard"
+Build the React app (using pnpm or npm):
+
+```
+cd dashboard && pnpm install && pnpm build && cd ..
+```
+
+Then copy `meal_plan.json-example` to `meal_plan.json` and update with your weekly meal plan.
+
+Finally, start everything:
+
 ```
 docker compose up -d --build
 ```
+
 ## 📡 Integrations
 
-Home Assistant yaml example files are provided in a seperate folder you can use them and change necessory details for your own Devices and Entities.
-
-Add HA details to the .env file
-```
-HA_URL=http://your-ha-instance:8123
-HA_TOKEN=your_long_lived_ha_token
-```
+Home Assistant YAML example files are provided in the `HomeAssistant/` folder. Copy them into your HA configuration and update entity IDs for your own devices.
 
 ## 🤖 Here is the complete list of triggers and keywords to use with your Telegram Bot.
 

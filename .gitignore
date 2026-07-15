@@ -7,8 +7,11 @@ meal_plan.json
 node_modules/
 dist/
 .eslintcache
-dashboard/build/
 
 # Complete Docker service storage blocks
-mosquitto/
-logs/
+mosquitto/*
+!mosquitto/**/.gitkeep
+logs/*
+!logs/.gitkeep
+data/*
+!data/.gitkeep

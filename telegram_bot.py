@@ -63,12 +63,19 @@ except ValueError:
 MEAL_PLAN_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "meal_plan.json")
 
 
+_WEEKLY_MEAL_PLAN_CACHE = None
+
+
 def load_weekly_meal_plan():
+    global _WEEKLY_MEAL_PLAN_CACHE
+    if _WEEKLY_MEAL_PLAN_CACHE is not None:
+        return _WEEKLY_MEAL_PLAN_CACHE
     try:
         if os.path.exists(MEAL_PLAN_PATH):
             with open(MEAL_PLAN_PATH, "r", encoding="utf-8") as f:
+                _WEEKLY_MEAL_PLAN_CACHE = json.load(f)
                 logger.info("Successfully loaded external weekly meal plan configuration.")
-                return json.load(f)
+                return _WEEKLY_MEAL_PLAN_CACHE
         else:
             logger.warning(
                 "meal_plan.json not found at %s! Falling back to empty menu defaults. "
@@ -502,6 +509,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
 
 
+async def _periodic_cleanup(context: ContextTypes.DEFAULT_TYPE):
+    db.prune_expired_appointments()
+    publish_shopping()
+    publish_meals()
+    publish_notes()
+    publish_appointments()
+
+
 def main():
     db.init_db()
     logger.info(f"SQLite database ready at {db.DB_PATH}")
@@ -517,6 +532,7 @@ def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.job_queue.run_repeating(_periodic_cleanup, interval=900, first=300)
 
     signal.signal(signal.SIGTERM, _signal_handler)
     signal.signal(signal.SIGINT, _signal_handler)
