@@ -210,13 +210,15 @@ class PresenceController:
     def __init__(self, mqtt_broker, mqtt_port, mqtt_user, mqtt_pass,
                  distance_threshold=200, still_energy_threshold=50,
                  confirm_frames=10, release_frames=10,
-                 discovery_prefix="homeassistant", device_id="ld2420_kitchen"):
+                 discovery_prefix="homeassistant", device_id="ld2420_kitchen",
+                 hdmi_power=False):
         self.distance_threshold = distance_threshold
         self.still_energy_threshold = still_energy_threshold
         self.confirm_frames = confirm_frames
         self.release_frames = release_frames
         self.discovery_prefix = discovery_prefix
         self.device_id = device_id
+        self._hdmi_power = hdmi_power
 
         self.has_target = False
         self.distance = 0
@@ -430,6 +432,10 @@ class PresenceController:
     def _set_screen(self, on):
         self.screen_on = on
         self._publish_on_change()
+        if self._hdmi_power:
+            cmd = "echo 'on 0' | cec-client -s -d 1" if on else "echo 'standby 0' | cec-client -s -d 1"
+            ret = os.system(cmd + " >/dev/null 2>&1")
+            logger.info("CEC power %s (exit=%d)", "ON" if on else "OFF", ret)
         logger.info("Screen turned %s (MQTT command)", "ON" if on else "OFF")
 
     def _on_mqtt_connect(self, client, userdata, flags, rc):
@@ -482,13 +488,15 @@ def main():
     max_gate = int(os.environ.get("MAX_GATE", 2))
     discovery_prefix = os.environ.get("MQTT_DISCOVERY_PREFIX", "homeassistant")
     device_id = os.environ.get("MQTT_DEVICE_ID", "ld2420_kitchen")
+    hdmi_power = os.environ.get("HDMI_POWER_CONTROL", "").lower() in ("1", "true", "yes")
 
     logger.info(
         "Starting — serial=%s baud=%d threshold=%dcm mqtt=%s:%s "
-        "confirm=%d release=%d gate=%d still_thresh=%d disc=%s",
+        "confirm=%d release=%d gate=%d still_thresh=%d disc=%s hdmi=%s",
         serial_port, serial_baud, distance_threshold,
         mqtt_broker, mqtt_port, confirm_frames, release_frames,
         max_gate, still_energy_threshold, discovery_prefix,
+        hdmi_power,
     )
 
     controller = PresenceController(
@@ -499,6 +507,7 @@ def main():
         release_frames=release_frames,
         discovery_prefix=discovery_prefix,
         device_id=device_id,
+        hdmi_power=hdmi_power,
     )
 
     def signal_handler(signum, frame):
