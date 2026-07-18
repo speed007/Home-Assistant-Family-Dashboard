@@ -1,0 +1,31 @@
+alias: "Kitchen Screen ON"
+description: "Turn kitchen screen on when presence detected"
+trigger:
+  - platform: state
+    entity_id: binary_sensor.kitchen_presence_ld2420
+    to: "on"
+condition: []
+action:
+  - service: mqtt.publish
+    data:
+      topic: home/dashboard/kitchen/screen/set
+      payload: "ON"
+mode: single
+---
+alias: "Kitchen Screen OFF"
+description: "Turn kitchen screen off 60s after presence lost"
+trigger:
+  - platform: state
+    entity_id: binary_sensor.kitchen_presence_ld2420
+    to: "off"
+    for:
+      hours: 0
+      minutes: 1
+      seconds: 0
+condition: []
+action:
+  - service: mqtt.publish
+    data:
+      topic: home/dashboard/kitchen/screen/set
+      payload: "OFF"
+mode: single
