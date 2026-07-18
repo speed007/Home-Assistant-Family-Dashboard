@@ -192,41 +192,35 @@ class PresenceController:
             retain=True,
         )
 
+    def _wlr_cmd(self, state):
+        env = os.environ.copy()
+        env["XDG_RUNTIME_DIR"] = "/run/user/1000"
+        env["WAYLAND_DISPLAY"] = "wayland-0"
+        try:
+            subprocess.run(
+                ["wlr-randr", "--output", "HDMI-A-1", "--on" if state else "--off"],
+                capture_output=True, timeout=5, env=env,
+            )
+        except subprocess.TimeoutExpired:
+            logger.error("wlr-randr timed out")
+        except Exception as e:
+            logger.error("wlr-randr failed: %s", e)
+
     def _turn_screen_on(self):
         if self.screen_on:
             return
-        try:
-            subprocess.run(
-                ["vcgencmd", "display_power", "1"],
-                capture_output=True, timeout=3,
-            )
-            self.screen_on = True
-            logger.info("Screen turned ON")
-        except subprocess.TimeoutExpired:
-            logger.error("HDMI ON command timed out")
-        except FileNotFoundError:
-            logger.warning("vcgencmd not found — not running on Raspberry Pi?")
-        except Exception as e:
-            logger.error("Failed to turn screen on: %s", e)
+        self._wlr_cmd(True)
+        self.screen_on = True
+        logger.info("Screen turned ON")
 
     def _turn_screen_off(self):
         if not self.screen_on:
             return
-        try:
-            subprocess.run(
-                ["vcgencmd", "display_power", "0"],
-                capture_output=True, timeout=3,
-            )
-            self.screen_on = False
-            self._off_timer = None
-            self._publish_state()
-            logger.info("Screen turned OFF")
-        except subprocess.TimeoutExpired:
-            logger.error("HDMI OFF command timed out")
-        except FileNotFoundError:
-            logger.warning("vcgencmd not found — not running on Raspberry Pi?")
-        except Exception as e:
-            logger.error("Failed to turn screen off: %s", e)
+        self._wlr_cmd(False)
+        self.screen_on = False
+        self._off_timer = None
+        self._publish_state()
+        logger.info("Screen turned OFF")
 
     def _start_off_timer(self):
         t = threading.Timer(self.screen_timeout, self._turn_screen_off)
