@@ -13,6 +13,9 @@ dist/
 .eslintcache
 dashboard/build/
 
+# OpenCode project-local config
+.opencode/
+
 # Complete Docker service storage blocks
 mosquitto/*
 !mosquitto/**/.gitkeep
