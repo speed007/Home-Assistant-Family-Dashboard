@@ -1,5 +1,7 @@
 # Credentials and Environment files
 .env
+.deploy_key
+.deploy_key.pub
 *.db
 secrets.json
 meal_plan.json

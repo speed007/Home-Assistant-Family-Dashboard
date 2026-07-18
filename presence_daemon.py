@@ -119,6 +119,7 @@ class PresenceController:
         self.screen_on = True
         self._off_timer = None
         self._running = True
+        self._energy_idle_counter = 0
 
         self._mqtt = mqtt.Client()
         if mqtt_user:
@@ -138,7 +139,16 @@ class PresenceController:
         self.still_energy = still_energy
         self.detection_state = state
 
-        if has_target:
+        effective_target = has_target
+
+        if has_target and moving_energy == 0 and still_energy == 0:
+            self._energy_idle_counter += 1
+            if self._energy_idle_counter >= 5:
+                effective_target = False
+        else:
+            self._energy_idle_counter = 0
+
+        if effective_target:
             self.has_target = True
             if distance > 0:
                 self.last_known_distance = distance
