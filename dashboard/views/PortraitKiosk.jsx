@@ -18,6 +18,7 @@ const PortraitKiosk = () => {
     connected,
     peopleHome,
     prayerTimes,
+    screenOn,
     getMealsForDay,
   } = useDashboardData({ weatherDefaults: { temperature: '\u2014', condition: 'Clear', feels_like: '\u2014' } });
 
@@ -193,6 +194,11 @@ const PortraitKiosk = () => {
         <div style={{ ...styles.syncDot, background: connected ? '#10b981' : '#ef4444' }}></div>
         {connected ? 'LIVE DISPATCH LINK ACTIVE' : 'RECONNECTING HUB CONTROLLER...'}
       </footer>
+
+      {!screenOn && <div style={{
+        position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
+        background: '#000', zIndex: 9999, pointerEvents: 'none'
+      }} />}
     </div>
   );
 };

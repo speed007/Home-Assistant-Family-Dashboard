@@ -31,7 +31,8 @@ const MQTT_TOPICS = [
   'home/dashboard/daily_notes',
   'home/dashboard/weather',
   'home/dashboard/presence',
-  'home/dashboard/prayer_times'
+  'home/dashboard/prayer_times',
+  'home/dashboard/kitchen/presence'
 ];
 
 export const tldrText = (text, maxLength = 120) => {
@@ -76,6 +77,7 @@ export function useDashboardData({ weatherDefaults } = {}) {
   const [connected, setConnected] = useState(false);
   const [peopleHome, setPeopleHome] = useState(DEFAULT_PEOPLE_HOME);
   const [prayerTimes, setPrayerTimes] = useState(DEFAULT_PRAYER_TIMES);
+  const [screenOn, setScreenOn] = useState(true);
 
   const MQTT_BROKER = import.meta.env.VITE_MQTT_BROKER_WS;
   const MQTT_USER = import.meta.env.VITE_MQTT_USER;
@@ -118,6 +120,8 @@ export function useDashboardData({ weatherDefaults } = {}) {
           setPeopleHome(data);
         } else if (topic === 'home/dashboard/prayer_times') {
           setPrayerTimes(data);
+        } else if (topic === 'home/dashboard/kitchen/presence') {
+          setScreenOn(data.screen === 'on');
         }
       } catch (err) {
         console.error('Parse error:', err);
@@ -152,6 +156,7 @@ export function useDashboardData({ weatherDefaults } = {}) {
     connected,
     peopleHome,
     prayerTimes,
+    screenOn,
     getMealsForDay,
   };
 }
