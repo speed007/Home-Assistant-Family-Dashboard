@@ -139,41 +139,41 @@ class PresenceController:
         self.still_energy = still_energy
         self.detection_state = state
 
-        effective_target = has_target
+        real_target = has_target and (moving_energy > 0 or still_energy > 0)
 
-        if has_target and moving_energy == 0 and still_energy == 0:
+        if not real_target:
             self._energy_idle_counter += 1
             if self._energy_idle_counter >= 5:
-                effective_target = False
+                has_target = False
         else:
             self._energy_idle_counter = 0
+            has_target = True
 
-        if effective_target:
+        in_range = (
+            has_target
+            and distance > 0
+            and (self.distance_threshold == 0 or distance <= self.distance_threshold)
+        )
+
+        if in_range:
             self.has_target = True
-            if distance > 0:
-                self.last_known_distance = distance
+            self.last_known_distance = distance
             self.distance = distance
             self._cancel_timer()
-
-            near = (
-                self.distance_threshold == 0
-                or self.last_known_distance <= self.distance_threshold
-            )
-            if near and not self.screen_on:
+            if not self.screen_on:
                 self._turn_screen_on()
-
-            logger.info(
-                "target=%s dist=%d moving_e=%d still_e=%d state=%d screen=%s",
-                has_target, distance, moving_energy, still_energy, state,
-                "on" if self.screen_on else "off",
-            )
         else:
-            if not self.has_target:
-                return
-            self.has_target = False
-            self.distance = 0
-            logger.info("Presence lost — starting %ds timer", self.screen_timeout)
-            self._start_off_timer()
+            if self.has_target:
+                self.has_target = False
+                self.distance = 0
+                logger.info("Presence lost — starting %ds timer", self.screen_timeout)
+                self._start_off_timer()
+
+        logger.info(
+            "target=%s dist=%d moving_e=%d still_e=%d state=%d screen=%s",
+            has_target, distance, moving_energy, still_energy, state,
+            "on" if self.screen_on else "off",
+        )
 
         self._publish_state()
 
