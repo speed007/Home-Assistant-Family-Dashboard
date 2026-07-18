@@ -21,11 +21,14 @@ class SerialReader:
     CONFIG_HEADER = b"\xfd\xfc\xfb\xfa"
     CONFIG_FOOTER = b"\x04\x03\x02\x01"
 
-    def __init__(self, port, baud=256000, timeout=0.1, max_gate=2):
+    def __init__(self, port, baud=256000, timeout=0.1, max_gate=2,
+                 gate0_moving=30, gate0_static=30):
         self.port = port
         self.baud = baud
         self.timeout = timeout
         self.max_gate = max_gate
+        self.gate0_moving = gate0_moving
+        self.gate0_static = gate0_static
         self._buf = bytearray()
         self._last_read = 0.0
         self.ser = None
@@ -93,8 +96,8 @@ class SerialReader:
         ok = 0
         for gate in range(9):
             if gate == 0:
-                moving = 5
-                static = 5
+                moving = self.gate0_moving
+                static = self.gate0_static
             elif gate < self.max_gate:
                 moving = 200
                 static = 200
@@ -498,17 +501,19 @@ def main():
     confirm_frames = int(os.environ.get("CONFIRM_FRAMES", 10))
     release_frames = int(os.environ.get("RELEASE_FRAMES", 10))
     max_gate = int(os.environ.get("MAX_GATE", 2))
+    gate0_moving = int(os.environ.get("GATE0_MOVING", 30))
+    gate0_static = int(os.environ.get("GATE0_STATIC", 30))
     discovery_prefix = os.environ.get("MQTT_DISCOVERY_PREFIX", "homeassistant")
     device_id = os.environ.get("MQTT_DEVICE_ID", "ld2420_kitchen")
     hdmi_power = os.environ.get("HDMI_POWER_CONTROL", "").lower() in ("1", "true", "yes")
 
     logger.info(
         "Starting — serial=%s baud=%d threshold=%dcm mqtt=%s:%s "
-        "confirm=%d release=%d gate=%d still_thresh=%d disc=%s hdmi=%s",
+        "confirm=%d release=%d gate=%d g0_mv=%d g0_st=%d still_thresh=%d disc=%s hdmi=%s",
         serial_port, serial_baud, distance_threshold,
         mqtt_broker, mqtt_port, confirm_frames, release_frames,
-        max_gate, still_energy_threshold, discovery_prefix,
-        hdmi_power,
+        max_gate, gate0_moving, gate0_static, still_energy_threshold,
+        discovery_prefix, hdmi_power,
     )
 
     controller = PresenceController(
@@ -533,7 +538,9 @@ def main():
     while controller._running:
         reader = None
         try:
-            reader = SerialReader(serial_port, baud=serial_baud, timeout=0.02, max_gate=max_gate)
+            reader = SerialReader(serial_port, baud=serial_baud, timeout=0.02,
+                                  max_gate=max_gate, gate0_moving=gate0_moving,
+                                  gate0_static=gate0_static)
             logger.info("Serial connected on %s @ %d baud", serial_port, serial_baud)
             reader.configure_gates()
             while controller._running:
