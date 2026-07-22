@@ -304,7 +304,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if low_text in [
             "shopping done", "been to shopping", "done shopping", "clear shopping",
-            "cleared shopping", "finished shopping", "emptied shopping", "clear shopping list"
+            "cleared shopping", "finished shopping", "emptied shopping", "clear shopping list",
+            "reset shopping", "wipe list", "erase list",
         ]:
             db.clear_shopping()
             await update.message.reply_text(
@@ -385,12 +386,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(msg, parse_mode="Markdown")
             return
 
-        note_match = re.match(r"^(?:note|sticky|remind|remember|memo)\b[,\s]+(.+)", raw_text, re.IGNORECASE)
-        buy_match = re.match(r"^(?:buy|add\s+to\s+shopping\s+list|add\s+to\s+shopping|add\s+to\s+grocery|add\s+to\s+groceries|add|get|shop|need|want)(?:\s+some|\s+to|\s+more)?\b[,\s]+(.+)", raw_text, re.IGNORECASE)
+        note_match = re.match(r"^(?:note|sticky|remind|remember|memo|jot|write|save|pin)\b[,\s]+(.+)", raw_text, re.IGNORECASE)
+        buy_match = re.match(r"^(?:buy|add\s+to\s+shopping\s+list|add\s+to\s+shopping|add\s+to\s+grocery|add\s+to\s+groceries|add|get|shop|need|want|grab|pick\s+up|require|fetch|purchase)(?:\s+some|\s+to|\s+more)?\b[,\s]+(.+)", raw_text, re.IGNORECASE)
         put_on_list_match = re.match(r"^put\b[,\s]+(.+)\s+on\s+(?:the\s+)?list", raw_text, re.IGNORECASE)
-        remove_match = re.match(r"^(?:remove|delete|cancel|drop|bought)\b[,\s]+(.+)", raw_text, re.IGNORECASE)
+        remove_match = re.match(r"^(?:remove|delete|cancel|drop|bought|erase|scrub|toss|dump|clear|forget|uncheck)\b[,\s]+(.+)", raw_text, re.IGNORECASE)
         meal_match = re.match(r"^(?:meal|dinner|food|menu|eat)\s+(today|tomorrow|monday|mon|tuesday|tue|wednesday|wed|thursday|thu|friday|fri|saturday|sat|sunday|sun)\b[,\s]+(.+)", raw_text, re.IGNORECASE)
-        appt_match = re.match(r"^(?:(?:add(?:ed)?|new|set|create)\s+)?(?:appointment|appt|book(?:ing)?|schedule|event|calendar)\b[,\s]+(.+)", raw_text, re.IGNORECASE)
+        appt_match = re.match(r"^(?:(?:add(?:ed)?|new|set|create|make)\s+)?(?:appointment|appt|book(?:ing)?|schedule|event|calendar|plan|reminder|meeting)\b[,\s]+(.+)", raw_text, re.IGNORECASE)
 
         if note_match:
             note_content = note_match.group(1).strip()
@@ -415,7 +416,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif remove_match:
             remaining = remove_match.group(1).strip()
 
-            appt_rem = re.match(r"^(?:appointment|appt|book(?:ing)?|event|schedule|calendar)\b[,\s]+(.+)", remaining, re.IGNORECASE)
+            appt_rem = re.match(r"^(?:appointment|appt|book(?:ing)?|event|schedule|calendar|plan|reminder|meeting)\b[,\s]+(.+)", remaining, re.IGNORECASE)
             if appt_rem:
                 target = appt_rem.group(1).strip()
                 target = re.sub(r"\s+(?:in|from|on)\s+(?:the\s+)?shopping\s+list$", "", target, flags=re.IGNORECASE).strip()
@@ -436,7 +437,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         await update.message.reply_text(f"No match found for: '{target}'.")
                 return
 
-            note_rem = re.match(r"^(?:note|sticky|memo)\b[,\s]+(.+)", remaining, re.IGNORECASE)
+            note_rem = re.match(r"^(?:note|sticky|memo|pin|jot)\b[,\s]+(.+)", remaining, re.IGNORECASE)
             if note_rem:
                 raw_target = note_rem.group(1).strip()
                 if raw_target.isdigit():

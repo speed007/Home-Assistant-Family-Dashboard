@@ -33,13 +33,16 @@ const PortraitKiosk = () => {
           <p style={styles.dateText}>{formatDate(currentTime)}</p>
         </div>
 
-        <div style={styles.weatherBlock}>
-          <div style={styles.weatherMain}>
-            <span style={styles.weatherIcon}>⚡</span>
-            <h2 style={styles.tempText}>{weather.temperature}°C</h2>
+          <div style={styles.weatherBlock}>
+            <div style={styles.weatherMain}>
+              <span style={styles.weatherIcon}>⚡</span>
+              <h2 style={styles.tempText}>{weather.temperature}°C</h2>
+            </div>
+            <span style={styles.condText}>{(weather.condition && weather.condition !== 'unknown' ? weather.condition : 'CLEAR').toUpperCase()}</span>
+            {weather.feels_like && weather.feels_like !== '—' && (
+              <span style={styles.feelsText}>Feels {weather.feels_like}°C</span>
+            )}
           </div>
-          <span style={styles.condText}>{weather.condition ? weather.condition.toUpperCase() : 'CLEAR'}</span>
-        </div>
       </header>
 
       <main style={styles.responsiveGrid}>
@@ -216,6 +219,7 @@ const styles = {
   weatherIcon: { fontSize: '20px' },
   tempText: { fontSize: '28px', fontWeight: '800', margin: 0 },
   condText: { color: '#6b7280', fontSize: '10px', fontWeight: '700', letterSpacing: '1.5px', marginTop: '2px' },
+  feelsText: { color: '#9ca3af', fontSize: '10px', fontWeight: '500', marginTop: '0px' },
 
   responsiveGrid: {
     display: 'grid',

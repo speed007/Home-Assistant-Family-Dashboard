@@ -36,7 +36,10 @@ const MobileDashboard = () => {
             <span style={styles.weatherIcon}>⚡</span>
             <h2 style={styles.tempText}>{weather.temperature}°C</h2>
           </div>
-          <span style={styles.condText}>{(weather.condition || 'CLEAR').toUpperCase()}</span>
+          <span style={styles.condText}>{(weather.condition && weather.condition !== 'unknown' ? weather.condition : 'CLEAR').toUpperCase()}</span>
+          {weather.feels_like && weather.feels_like !== '—' && (
+            <span style={styles.feelsText}>Feels {weather.feels_like}°C</span>
+          )}
         </div>
       </header>
 
@@ -186,6 +189,7 @@ const styles = {
   weatherIcon: { fontSize: '16px' },
   tempText: { fontSize: '22px', fontWeight: '800', margin: 0 },
   condText: { color: '#6b7280', fontSize: '9px', fontWeight: '700', letterSpacing: '1px', marginTop: '2px' },
+  feelsText: { color: '#9ca3af', fontSize: '9px', fontWeight: '500', marginTop: '0px' },
 
   responsiveGrid: { display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: '16px', width: '100%' },
   glassCard: { position: 'relative', background: 'rgba(17, 24, 39, 0.45)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', borderRadius: '16px', padding: '16px', border: '1px solid rgba(255, 255, 255, 0.07)', boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.37)', display: 'flex', flexDirection: 'column', flex: '1 1 320px', boxSizing: 'border-box', overflow: 'hidden' },

@@ -46,10 +46,11 @@ export const formatTime = (date, { showSeconds = false } = {}) =>
     minute: '2-digit',
     ...(showSeconds ? { second: '2-digit' } : {}),
     hour12: true,
+    timeZone: 'Europe/London',
   }).format(date);
 
 export const formatDate = (date) =>
-  new Intl.DateTimeFormat('en-GB', { weekday: 'long', month: 'short', day: 'numeric' }).format(date);
+  new Intl.DateTimeFormat('en-GB', { weekday: 'long', month: 'short', day: 'numeric', timeZone: 'Europe/London' }).format(date);
 
 export function useClock() {
   const [currentTime, setCurrentTime] = useState(new Date());
