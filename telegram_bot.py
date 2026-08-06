@@ -317,6 +317,41 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         db.prune_expired_appointments()
 
+        if "\n" in raw_text:
+            lines = [l.strip() for l in raw_text.split("\n") if l.strip()]
+            if len(lines) > 1:
+                add_matches = []
+                all_adds = True
+                for line in lines:
+                    m = re.match(
+                        r"^(?:buy|add\s+to\s+shopping\s+list|add\s+to\s+shopping|add\s+to\s+grocery|add\s+to\s+groceries|add|get|shop|need|want|grab|pick\s+up|require|fetch|purchase)(?:\s+some|\s+to|\s+more)?\b[,\s]+(.+)",
+                        line,
+                        re.IGNORECASE,
+                    )
+                    if m:
+                        add_matches.append(m.group(1).strip())
+                    else:
+                        all_adds = False
+                        break
+                if all_adds and add_matches:
+                    added, dupes = [], []
+                    for item in add_matches:
+                        if db.add_shopping(item):
+                            added.append(item)
+                        else:
+                            dupes.append(item)
+                    if added:
+                        publish_shopping()
+                        for item in added:
+                            _background_ha_call(sync_shopping_to_ha, item, "add")
+                    parts = []
+                    if added:
+                        parts.append("Added: " + ", ".join(f"'{a}'" for a in added))
+                    if dupes:
+                        parts.append("Already on list: " + ", ".join(f"'{d}'" for d in dupes))
+                    await _reply(update, "\n".join(parts) if parts else "No new items added.")
+                    return
+
         if low_text in [
             "shopping done", "been to shopping", "done shopping", "clear shopping",
             "cleared shopping", "finished shopping", "emptied shopping", "clear shopping list",
