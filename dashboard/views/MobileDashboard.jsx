@@ -89,7 +89,7 @@ const MobileDashboard = () => {
           <div style={styles.listContainer}>
             {appointments.length > 0 ? (
               appointments.map((apt, idx) => {
-                const aptDate = apt.date ? new Date(apt.date + 'T00:00:00').toLocaleDateString('en-GB', {month: 'short', day: 'numeric'}) : 'Plan';
+                const aptDate = apt.date ? new Date(apt.date + 'T00:00:00').toLocaleDateString('en-GB', {weekday: 'short', day: 'numeric', month: 'short'}) : 'Plan';
                 return (
                   <div key={idx} style={styles.apptRow}>
                     <div style={styles.apptBadgeBlock}>

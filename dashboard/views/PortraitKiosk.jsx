@@ -102,7 +102,7 @@ const PortraitKiosk = () => {
           <div style={styles.listContainer}>
             {appointments.length > 0 ? (
               appointments.map((apt, idx) => {
-                const aptDate = apt.date ? new Date(apt.date + 'T00:00:00').toLocaleDateString('en-GB', {month: 'short', day: 'numeric'}) : 'Plan';
+                const aptDate = apt.date ? new Date(apt.date + 'T00:00:00').toLocaleDateString('en-GB', {weekday: 'short', day: 'numeric', month: 'short'}) : 'Plan';
                 return (
                   <div key={idx} style={styles.apptRow}>
                     <div style={styles.apptBadgeBlock}>
@@ -255,11 +255,11 @@ const styles = {
   listContainer: { display: 'flex', flexDirection: 'column', gap: '6px', overflowY: 'auto', flex: 1, minHeight: 0 },
   mealItem: { background: 'rgba(255, 255, 255, 0.03)', padding: '8px 12px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.02)', display: 'flex', alignItems: 'center', color: '#e5e7eb' },
   dotIndicator: { color: '#10b981', marginRight: '8px', fontSize: '16px', flexShrink: 0 },
-  apptRow: { display: 'flex', flexDirection: 'column', gap: '4px', background: 'rgba(59, 130, 246, 0.04)', padding: '10px', borderRadius: '10px', border: '1px solid rgba(59, 130, 246, 0.1)' },
-  apptBadgeBlock: { display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' },
-  indexBadge: { background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444', fontSize: '10px', fontWeight: '800', padding: '1px 4px', borderRadius: '3px' },
-  dateBadge: { background: 'rgba(37, 99, 235, 0.2)', color: '#60a5fa', fontSize: '10px', fontWeight: '700', padding: '1px 4px', borderRadius: '3px' },
-  timeBadge: { background: 'rgba(255, 255, 255, 0.06)', color: '#9ca3af', fontSize: '10px', padding: '1px 4px', borderRadius: '3px' },
+  apptRow: { display: 'flex', flexDirection: 'column', gap: '6px', background: 'rgba(59, 130, 246, 0.04)', padding: '10px', borderRadius: '10px', border: '1px solid rgba(59, 130, 246, 0.1)' },
+  apptBadgeBlock: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' },
+  indexBadge: { background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444', fontSize: '13px', fontWeight: '800', padding: '2px 6px', borderRadius: '4px' },
+  dateBadge: { background: 'rgba(37, 99, 235, 0.25)', color: '#93c5fd', fontSize: '13px', fontWeight: '800', padding: '2px 6px', borderRadius: '4px', letterSpacing: '0.3px' },
+  timeBadge: { background: 'rgba(255, 255, 255, 0.08)', color: '#e5e7eb', fontSize: '13px', fontWeight: '700', padding: '2px 6px', borderRadius: '4px' },
   noteRow: { display: 'flex', flexDirection: 'column', gap: '4px', background: 'rgba(245, 158, 11, 0.04)', padding: '10px', borderRadius: '10px', border: '1px solid rgba(245, 158, 11, 0.1)' },
   noteMeta: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
   noteIndex: { color: '#f59e0b', fontSize: '10px', fontWeight: '800' },
