@@ -75,18 +75,10 @@
 
 # ==================== ALEXA APPOINTMENT ANNOUNCEMENTS ====================
 # Requires the Alexa Media Player custom integration (via HACS) so that
-# notify.alexa_media exists and can speak arbitrary text to a target Echo.
-#
-# Update ALEXA_TARGET_DEVICE below (the media_player.* entity_id) to match
-# your actual Echo. Find it under Settings > Devices & Services > Entities,
-# search "alexa media" / "echo". Per-device notify services like
-# notify.alexa_media_kitchen have existed in some AMP versions and been
-# removed/renamed in others (reported breakage after a 2025.11 update), so
-# these automations use the generic notify.alexa_media service with an
-# explicit target: instead, which has been the more stable pattern.
+# notify.alexa_media exists and can speak arbitrary text to target Echos.
 #
 # Both automations below use the native HA "calendar" trigger with a
-# time offset, which fires automatically against calendar.family_events
+# time offset, which fires automatically against calendar.telegram
 # without any polling logic. Two caveats from HA's own docs, worth
 # knowing before you rely on this:
 #   1. Calendars are only re-read every ~15 minutes, so the actual
@@ -99,6 +91,9 @@
 # strftime extension - it works on virtually all HA installs (HAOS,
 # Docker, Supervised all run Linux), but isn't portable to Windows if
 # you're running HA Core directly on Windows.
+#
+# The Telegram bot pushes appointments to calendar.telegram via
+# HA's calendar.create_event service (see telegram_bot.py).
 
 - id: 'alexa_appointment_day_before'
   alias: "Alexa: Appointment Reminder (Day Before)"
@@ -106,18 +101,33 @@
   trigger:
     - platform: calendar
       event: start
-      entity_id: calendar.family_events  # Must match the calendar used in calendar.create_event above
-      offset: "-24:00:00"  # 24 hours = "day before", expressed in HH:MM:SS to avoid version differences in day-offset support
+      entity_id: calendar.telegram
+      offset: "-24:00:00"
+    - platform: calendar
+      event: start
+      entity_id: calendar.husband
+      offset: "-24:00:00"
+    - platform: calendar
+      event: start
+      entity_id: calendar.wife
+      offset: "-24:00:00"
   action:
     - service: notify.alexa_media
-      target:
-        entity_id: media_player.kitchen_echo  # <-- Update to your actual Echo's media_player entity_id
       data:
+        entity_id:
+          - media_player.echo_dot_back_room
+          - media_player.echo_dot_front_room
+          - media_player.echo_pop_hallway
         message: >
-          Reminder: you have "{{ trigger.calendar_event.summary }}" tomorrow
-          at {{ trigger.calendar_event.start.strftime('%-I:%M %p') }}.
+          {% set event = trigger.calendar_event if trigger.calendar_event is defined else none %}
+          {% if event %}
+          Reminder: you have "{{ event.summary }}" tomorrow
+          at {{ event.start.strftime('%-I:%M %p') }}.
+          {% else %}
+          Reminder: you have an appointment tomorrow.
+          {% endif %}
         data:
-          type: announce  # Alexa Media Player: plays a ding before speaking, instead of a queued message
+          type: announce
 
 - id: 'alexa_appointment_hour_before'
   alias: "Alexa: Appointment Reminder (1 Hour Before)"
@@ -125,15 +135,53 @@
   trigger:
     - platform: calendar
       event: start
-      entity_id: calendar.family_events
+      entity_id: calendar.telegram
+      offset: "-01:00:00"
+    - platform: calendar
+      event: start
+      entity_id: calendar.husband
+      offset: "-01:00:00"
+    - platform: calendar
+      event: start
+      entity_id: calendar.wife
       offset: "-01:00:00"
   action:
     - service: notify.alexa_media
-      target:
-        entity_id: media_player.kitchen_echo  # <-- Update to your actual Echo's media_player entity_id
       data:
+        entity_id:
+          - media_player.echo_dot_back_room
+          - media_player.echo_dot_front_room
+          - media_player.echo_pop_hallway
         message: >
-          Reminder: "{{ trigger.calendar_event.summary }}" starts in about an hour.
+          {% set event = trigger.calendar_event if trigger.calendar_event is defined else none %}
+          {% if event %}
+          Reminder: "{{ event.summary }}" starts in about an hour.
+          {% else %}
+          Reminder: you have an appointment starting soon.
+          {% endif %}
+        data:
+          type: announce
+
+# ==================== ALEXA NOTES ANNOUNCEMENTS ====================
+# Triggered by the telegram_note_posted event fired from telegram_bot.py
+# whenever a new sticky note is added via Telegram.
+
+- id: 'alexa_note_announcement'
+  alias: "Alexa: New Note Announcement"
+  mode: single
+  trigger:
+    - platform: event
+      event_type: telegram_note_posted
+  action:
+    - service: notify.alexa_media
+      data:
+        entity_id:
+          - media_player.echo_dot_back_room
+          - media_player.echo_dot_front_room
+          - media_player.echo_pop_hallway
+        message: >
+          New note from {{ trigger.event.data.sender }}:
+          {{ trigger.event.data.message }}
         data:
           type: announce
 

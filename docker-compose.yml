@@ -5,6 +5,7 @@ services:
       dockerfile: Dockerfile
     container_name: family-dashboard-telegram-bot
     restart: unless-stopped
+    network_mode: host
     env_file:
       - .env
     environment:
@@ -14,10 +15,6 @@ services:
       - ./data:/data
       - ./logs:/var/log
       - ./meal_plan.json:/app/meal_plan.json:ro
-    networks:
-      - home-automation
-    depends_on:
-      - mqtt
     healthcheck:
       test: ["CMD", "python", "-c", "import sqlite3; sqlite3.connect('/data/dashboard.db')"]
       interval: 30s

@@ -46,6 +46,13 @@ def init_db():
                 time TEXT,
                 created_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS bot_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                message_id INTEGER NOT NULL,
+                chat_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL
+            );
             """
         )
         conn.commit()
@@ -268,6 +275,39 @@ def prune_expired_appointments():
     today_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     with _connect() as conn:
         conn.execute("DELETE FROM appointments WHERE date IS NOT NULL AND date < ?", (today_iso,))
+        conn.commit()
+
+
+# -------------------------------------------------- Bot message tracking
+
+def add_bot_message(message_id: int, chat_id: int):
+    with _connect() as conn:
+        conn.execute(
+            "INSERT INTO bot_messages (message_id, chat_id, created_at) VALUES (?, ?, ?)",
+            (message_id, chat_id, _now()),
+        )
+        conn.commit()
+
+
+def get_old_bot_messages(days: int = 3) -> list[dict]:
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT id, message_id, chat_id FROM bot_messages WHERE created_at < ?",
+            (cutoff,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def delete_bot_message_record(row_id: int):
+    with _connect() as conn:
+        conn.execute("DELETE FROM bot_messages WHERE id = ?", (row_id,))
+        conn.commit()
+
+
+def clear_bot_messages():
+    with _connect() as conn:
+        conn.execute("DELETE FROM bot_messages")
         conn.commit()
 
 

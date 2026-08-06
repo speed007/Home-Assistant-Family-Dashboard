@@ -92,45 +92,36 @@ Unauthorized`, the token is wrong or expired. If you get `404`, the
 
 ---
 
-## Part 2: Alexa appointment announcements
+## Part 2: Alexa appointment & notes announcements
 
 ### What you need before this works
 
 - **Alexa Media Player** integration installed via HACS and already
   connected to your Amazon account (you confirmed this is already set up)
-- Know the exact `media_player.*` entity ID of the Echo you want
-  announcements on
+- Know the `media_player.*` entity IDs of your Echo devices
 
-### Find your Echo's entity ID
+### Find your Echo entity IDs
 
 1. In Home Assistant, go to **Settings → Devices & Services → Entities**
 2. Search for **"echo"** or **"alexa"**
-3. Find your kitchen Echo (or whichever one you want) — note its entity ID,
-   it'll look like `media_player.echo_dot_kitchen` or similar
+3. Note each device's entity ID (e.g. `media_player.echo_dot_back_room`)
 
-### Update the automation file
+### Update the automation file (one-time setup)
 
-Open `ha_automations.yaml` and find **two** places that say:
+Open `ha_automations.yaml` and check the `target.entity_id` lists in the
+Alexa automations match your actual Echo device IDs. The file currently
+targets all three Echo dots by default; add/remove devices as needed.
 
-```yaml
-target:
-  entity_id: media_player.kitchen_echo  # <-- Update to your actual Echo's media_player entity_id
-```
-
-Replace `media_player.kitchen_echo` with your real entity ID from the step
-above, in **both** the `alexa_appointment_day_before` and
-`alexa_appointment_hour_before` automations.
-
-### Confirm the notify service works at all (do this before relying on it)
+### Confirm the notify service works (do this before relying on it)
 
 In Home Assistant: **Developer Tools → Actions** (or "Services" on older
 versions). Search for `notify.alexa_media`. If it's not in the list, your
 Alexa Media Player integration needs attention before the automations
 below will do anything.
 
-Run a quick manual test there:
+Run a quick manual test:
 - Action: `notify.alexa_media`
-- Target: your `media_player.*` entity
+- Target: your `media_player.*` entity (or a list of them)
 - Data:
   ```yaml
   message: "Testing, testing"
@@ -139,13 +130,13 @@ Run a quick manual test there:
   ```
 
 Click **Perform Action**. Your Echo should chime and speak "Testing,
-testing." If it doesn't, fix this before moving on — the automations will
-fail the same way.
+testing." If it doesn't, fix this before moving on.
 
 ### Install the automations
 
-1. Copy the **two new automation blocks** (`alexa_appointment_day_before`
-   and `alexa_appointment_hour_before`) from `ha_automations.yaml`
+1. Open `ha_automations.yaml` and copy the three automation blocks:
+   `alexa_appointment_day_before`, `alexa_appointment_hour_before`,
+   and `alexa_note_announcement`
 2. In Home Assistant: **Settings → Automations & Scenes → Automations**
 3. Click the **three-dot menu (⋮)** top-right → **Edit in YAML**
 4. Paste in each automation (or add them to your existing
@@ -157,20 +148,22 @@ fail the same way.
 Calendar triggers in HA only re-check every ~15 minutes, so to test
 without waiting a full day:
 
-1. Add a test appointment via Telegram: `dentist tomorrow at 2pm` — or
-   create one directly in HA's calendar
+1. Add a test appointment via Telegram: `dentist tomorrow at 2pm`
 2. Temporarily edit the automation's `offset` to something close to now,
    e.g. if it's currently 2:50pm and your appointment is at 3:00pm, set
-   `offset: "-00:10:00"` to fire in ~10 minutes
+   `offset: "-00:10:00"` to fire in ~10 minutes (do this for both
+   day-before and hour-before automations separately)
 3. Wait for the calendar to refresh and the automation to fire
 4. **Revert the offset** back to `-24:00:00` / `-01:00:00` once confirmed working
 
 ### Expected behavior once live
 
-- **24 hours before** an appointment: Echo announces *"Reminder: you have
+- **24 hours before** an appointment: Echoes announce *"Reminder: you have
   'Dentist' tomorrow at 2:00 PM."*
-- **1 hour before**: Echo announces *"Reminder: 'Dentist' starts in about
+- **1 hour before**: Echoes announce *"Reminder: 'Dentist' starts in about
   an hour."*
+- **When a new note is added**: Echoes announce *"New note from [name]:
+  [message]"*
 
 ### If it doesn't work
 
@@ -179,19 +172,21 @@ without waiting a full day:
 # Settings → Automations & Scenes → click the automation → "..." → Traces
 
 # Check the calendar entity actually has the event on it
-# Developer Tools → States → search "calendar.family_events"
+# Developer Tools → States → search "calendar.telegram"
 # Look at its attributes for upcoming events
 ```
 
 Common issues:
 - **Automation never fires**: the calendar entity ID in the trigger
-  (`calendar.family_events`) doesn't match your actual calendar entity —
+  (`calendar.telegram`) doesn't match your actual calendar entity —
   check Developer Tools → States.
-- **Fires but no sound**: the Echo's entity ID is wrong, or the device is
+- **Fires but no sound**: an Echo entity ID is wrong, or the device is
   in Do Not Disturb mode.
 - **Wrong time announced**: double-check the appointment's time was parsed
   correctly when it was added — check Developer Tools → States →
-  `calendar.family_events` attributes for the actual stored time.
+  `calendar.telegram` attributes for the actual stored time.
+- **Notes not announced**: verify `HA_URL` and `HA_TOKEN` are set in the
+  bot's .env so it can fire the `telegram_note_posted` event.
 
 ---
 

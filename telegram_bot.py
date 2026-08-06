@@ -7,7 +7,7 @@ import requests
 import re
 import signal
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone, time
 from dotenv import load_dotenv
 import paho.mqtt.client as mqtt
 from telegram import Update
@@ -28,7 +28,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 HA_URL = os.getenv("HA_URL")
 HA_TOKEN = os.getenv("HA_TOKEN")
-HA_CALENDAR_ENTITY = os.getenv("HA_CALENDAR_ENTITY", "calendar.family_events")
+HA_CALENDAR_ENTITY = os.getenv("HA_CALENDAR_ENTITY", "calendar.telegram")
 
 MQTT_BROKER = os.getenv("MQTT_BROKER")
 MQTT_PORT_RAW = os.getenv("MQTT_PORT")
@@ -134,6 +134,19 @@ def publish_to_dashboard(topic: str, payload_dict: dict):
 
 def _background_ha_call(func, *args):
     threading.Thread(target=func, args=args, daemon=True).start()
+
+def _now():
+    return datetime.now(timezone.utc).isoformat(timespec="seconds") + "Z"
+
+
+def _reply(update: Update, text: str, parse_mode: str | None = None) -> object | None:
+    msg = update.message.reply_text(text, parse_mode=parse_mode)
+    try:
+        db.add_bot_message(msg.message_id, msg.chat.id)
+    except Exception:
+        pass
+    return msg
+
 
 def _signal_handler(sig, frame):
     logger.info(f"Received signal {sig} — shutting down gracefully...")
@@ -289,7 +302,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "_Every command must be the first word(s) of the message — the bot "
         "does not scan mid-sentence for these keywords._"
     )
-    await update.message.reply_text(welcome_text, parse_mode="Markdown")
+    await _reply(update,welcome_text, parse_mode="Markdown")
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -297,6 +310,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         raw_text = update.message.text.strip()
         user_name = update.message.from_user.first_name or "Family Member"
         low_text = raw_text.lower().strip()
+
+        db.add_bot_message(update.message.message_id, update.message.chat.id)
 
         WEEKLY_MEAL_PLAN = load_weekly_meal_plan()
 
@@ -308,7 +323,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "reset shopping", "wipe list", "erase list",
         ]:
             db.clear_shopping()
-            await update.message.reply_text(
+            await _reply(update,
                 "Shopping list completely cleared! "
                 + ("(Note: this doesn't clear HA's Alexa shopping list — clear that separately if needed.)"
                    if HA_URL and HA_TOKEN else "")
@@ -318,26 +333,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if low_text in ["clear menu", "clear meal plan", "reset menu", "delete menu"]:
             db.clear_meals()
-            await update.message.reply_text("Meal overrides cleared! Reverted to default rotation schedule.")
+            await _reply(update,"Meal overrides cleared! Reverted to default rotation schedule.")
             publish_meals()
             return
 
         if low_text in ["clear notes", "clear sticky", "delete notes", "clear notes stack"]:
             db.clear_daily_notes()
-            await update.message.reply_text("Notes stack cleared.")
+            await _reply(update,"Notes stack cleared.")
             publish_notes()
             return
 
         if low_text in ["clear appointments", "clear calendar", "clear schedule"]:
             db.clear_appointments()
-            await update.message.reply_text("All manual calendar entries wiped.")
+            await _reply(update,"All manual calendar entries wiped.")
             publish_appointments()
             return
 
         if re.match(r"^(list|view|show|get)\s+(shop|item|grocer)", low_text) or low_text in ["whats on the list", "what are we buying", "what's on the list"]:
             items = db.get_shopping()
             msg = "Current Shopping List:\n" + ("_Empty_" if not items else "\n".join(f"{i}. {item}" for i, item in enumerate(items, 1)))
-            await update.message.reply_text(msg, parse_mode="Markdown")
+            await _reply(update,msg, parse_mode="Markdown")
             return
 
         if low_text in ["list notes", "view notes", "notes", "show notes", "sticky notes", "memos"]:
@@ -346,19 +361,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"*{n['index']}.* {n['text']}" + (f" (by {n['author']})" if n.get('author') else "")
                 for n in current_notes
             ))
-            await update.message.reply_text(msg, parse_mode="Markdown")
+            await _reply(update,msg, parse_mode="Markdown")
             return
 
         if re.match(r"^(list|view|show)\s+(appt|calendar|event|sched)", low_text) or low_text in ["whats on today", "any appointments", "schedule", "calendar"]:
             appts = db.get_appointments()
             if not appts:
-                await update.message.reply_text("No manually tracked appointments found.")
+                await _reply(update,"No manually tracked appointments found.")
             else:
                 msg = "Manual Calendar Events:\n"
                 for a in appts:
                     when = f"[{a['date']} {a['time'] or ''}]" if a['date'] else "[Unscheduled]"
                     msg += f"*{a['index']}.* {when} {a['title']}\n"
-                await update.message.reply_text(msg, parse_mode="Markdown")
+                await _reply(update,msg, parse_mode="Markdown")
             return
 
         if re.match(r"^(list|view|show)\s+(meal|menu|food|dinner)", low_text) or low_text in ["meals", "whats for dinner", "what's for dinner", "menu", "food", "meal plan"]:
@@ -383,7 +398,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 tomorrow_display = "\n".join(f"- {m}" for m in WEEKLY_MEAL_PLAN.get(day_tomorrow, ["None configured"]))
 
             msg = f"Family Menu Outlook\n\nTODAY:\n{today_display}\n\nTOMORROW:\n{tomorrow_display}"
-            await update.message.reply_text(msg, parse_mode="Markdown")
+            await _reply(update,msg, parse_mode="Markdown")
             return
 
         note_match = re.match(r"^(?:note|sticky|remind|remember|memo|jot|write|save|pin)\b[,\s]+(.+)", raw_text, re.IGNORECASE)
@@ -396,7 +411,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if note_match:
             note_content = note_match.group(1).strip()
             db.add_daily_note(note_content, user_name)
-            await update.message.reply_text(f"Note posted: \"{note_content}\"")
+            await _reply(update,f"Note posted: \"{note_content}\"")
             _background_ha_call(trigger_ha_note_event, note_content, user_name)
             publish_notes()
             return
@@ -409,7 +424,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 day_target = day_map[day_target]
 
             db.set_meal(day_target, meal_content)
-            await update.message.reply_text(f"Meal updated for {day_target.capitalize()}: \"{meal_content}\"")
+            await _reply(update,f"Meal updated for {day_target.capitalize()}: \"{meal_content}\"")
             publish_meals()
             return
 
@@ -423,18 +438,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if target.isdigit():
                     target_idx = int(target)
                     if db.delete_appointment_by_index(target_idx):
-                        await update.message.reply_text(f"Removed appointment #{target_idx}.")
+                        await _reply(update,f"Removed appointment #{target_idx}.")
                         publish_appointments()
                     else:
-                        await update.message.reply_text(f"Appointment #{target_idx} not found.")
+                        await _reply(update,f"Appointment #{target_idx} not found.")
                 elif len(target) < 3:
-                    await update.message.reply_text(f"Text too short ({len(target)} chars) — use the appointment number to delete.")
+                    await _reply(update,f"Text too short ({len(target)} chars) — use the appointment number to delete.")
                 else:
                     if db.delete_appointment_by_text(target):
-                        await update.message.reply_text(f"Removed appointment matching: \"{target}\"")
+                        await _reply(update,f"Removed appointment matching: \"{target}\"")
                         publish_appointments()
                     else:
-                        await update.message.reply_text(f"No match found for: '{target}'.")
+                        await _reply(update,f"No match found for: '{target}'.")
                 return
 
             note_rem = re.match(r"^(?:note|sticky|memo|pin|jot)\b[,\s]+(.+)", remaining, re.IGNORECASE)
@@ -443,33 +458,33 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if raw_target.isdigit():
                     target_idx = int(raw_target)
                     if db.delete_note_by_index(target_idx):
-                        await update.message.reply_text(f"Deleted note #{target_idx}.")
+                        await _reply(update,f"Deleted note #{target_idx}.")
                         publish_notes()
                     else:
-                        await update.message.reply_text(f"Note #{target_idx} doesn't exist.")
+                        await _reply(update,f"Note #{target_idx} doesn't exist.")
                 elif len(raw_target) < 3:
-                    await update.message.reply_text(f"Text too short ({len(raw_target)} chars) — use the note number to delete.")
+                    await _reply(update,f"Text too short ({len(raw_target)} chars) — use the note number to delete.")
                 else:
                     if db.delete_note_by_text(raw_target):
-                        await update.message.reply_text("Deleted note matching phrase.")
+                        await _reply(update,"Deleted note matching phrase.")
                         publish_notes()
                     else:
-                        await update.message.reply_text("Note phrase not found.")
+                        await _reply(update,"Note phrase not found.")
                 return
 
             if remaining.isdigit():
                 target_idx = int(remaining)
                 if db.delete_shopping_item_by_index(target_idx):
-                    await update.message.reply_text(f"Removed item #{target_idx} from shopping list.")
+                    await _reply(update,f"Removed item #{target_idx} from shopping list.")
                     publish_shopping()
                 else:
-                    await update.message.reply_text(f"Item #{target_idx} not found.")
+                    await _reply(update,f"Item #{target_idx} not found.")
             elif db.delete_shopping_item(remaining):
-                await update.message.reply_text(f"Removed '{remaining}' from shopping list.")
+                await _reply(update,f"Removed '{remaining}' from shopping list.")
                 publish_shopping()
                 _background_ha_call(sync_shopping_to_ha, remaining, "remove")
             else:
-                await update.message.reply_text(f"'{remaining}' is not on the shopping list.")
+                await _reply(update,f"'{remaining}' is not on the shopping list.")
             return
 
         elif appt_match:
@@ -510,7 +525,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             display_when = f"on {date_val}" if date_val else "unscheduled"
             if time_val:
                 display_when += f" at {time_val}"
-            await update.message.reply_text(f"Appointment added ({display_when}): \"{title_val}\"")
+            await _reply(update,f"Appointment added ({display_when}): \"{title_val}\"")
             return
 
         item_to_add = None
@@ -524,11 +539,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if item_to_add:
             if db.add_shopping(item_to_add):
-                await update.message.reply_text(f"Added '{item_to_add}' to shopping list.")
+                await _reply(update,f"Added '{item_to_add}' to shopping list.")
                 publish_shopping()
                 _background_ha_call(sync_shopping_to_ha, item_to_add, "add")
             else:
-                await update.message.reply_text(f"'{item_to_add}' is already on the list!")
+                await _reply(update,f"'{item_to_add}' is already on the list!")
             return
 
         logger.info(f"Ignored group chat conversation line: '{raw_text}'")
@@ -536,7 +551,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.exception(f"Unhandled system trace exception during handling: {e}")
         try:
-            await update.message.reply_text("Something went wrong processing that message. Check the bot logs.")
+            await _reply(update,"Something went wrong processing that message. Check the bot logs.")
         except Exception:
             pass
 
@@ -547,6 +562,39 @@ async def _periodic_cleanup(context: ContextTypes.DEFAULT_TYPE):
     publish_meals()
     publish_notes()
     publish_appointments()
+
+
+async def _cleanup_old_messages(context: ContextTypes.DEFAULT_TYPE):
+    old = db.get_old_bot_messages(days=3)
+    for row in old:
+        try:
+            msg = await context.bot.get_message(chat_id=row["chat_id"], message_id=row["message_id"])
+            if msg.is_pinned:
+                logger.info(f"Skipping pinned message #{row['message_id']}")
+                continue
+        except Exception:
+            pass
+        try:
+            await context.bot.delete_message(chat_id=row["chat_id"], message_id=row["message_id"])
+            db.delete_bot_message_record(row["id"])
+            logger.info(f"Deleted old message #{row['message_id']}")
+        except Exception as e:
+            err = str(e).lower()
+            if "message to delete not found" in err or "message is too old" in err:
+                db.delete_bot_message_record(row["id"])
+            elif "chat_admin_required" in err or "not enough rights" in err:
+                logger.warning(f"Cannot delete message #{row['message_id']}: bot lacks delete permission")
+                db.delete_bot_message_record(row["id"])
+            else:
+                logger.debug(f"Could not delete message #{row['message_id']}: {e}")
+
+
+async def track_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message:
+        try:
+            db.add_bot_message(update.message.message_id, update.message.chat.id)
+        except Exception:
+            pass
 
 
 def main():
@@ -564,7 +612,9 @@ def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(MessageHandler(filters.ALL, track_message))
     app.job_queue.run_repeating(_periodic_cleanup, interval=900, first=300)
+    app.job_queue.run_daily(_cleanup_old_messages, time=time(hour=4, minute=0))
 
     signal.signal(signal.SIGTERM, _signal_handler)
     signal.signal(signal.SIGINT, _signal_handler)
