@@ -320,20 +320,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if "\n" in raw_text:
             lines = [l.strip() for l in raw_text.split("\n") if l.strip()]
             if len(lines) > 1:
-                add_matches = []
-                all_adds = True
-                for line in lines:
-                    m = re.match(
-                        r"^(?:buy|add\s+to\s+shopping\s+list|add\s+to\s+shopping|add\s+to\s+grocery|add\s+to\s+groceries|add|get|shop|need|want|grab|pick\s+up|require|fetch|purchase)(?:\s+some|\s+to|\s+more)?\b[,\s]+(.+)",
-                        line,
-                        re.IGNORECASE,
-                    )
-                    if m:
-                        add_matches.append(m.group(1).strip())
-                    else:
-                        all_adds = False
-                        break
-                if all_adds and add_matches:
+                add_re = re.compile(
+                    r"^(?:buy|add\s+to\s+shopping\s+list|add\s+to\s+shopping|add\s+to\s+grocery|add\s+to\s+groceries|add|get|shop|need|want|grab|pick\s+up|require|fetch|purchase)(?:\s+some|\s+to|\s+more)?\b[,\s]+(.+)",
+                    re.IGNORECASE,
+                )
+                first_match = add_re.match(lines[0])
+                if first_match:
+                    add_matches = [first_match.group(1).strip()]
+                    for line in lines[1:]:
+                        m = add_re.match(line)
+                        if m:
+                            add_matches.append(m.group(1).strip())
+                        else:
+                            add_matches.append(line)
                     added, dupes = [], []
                     for item in add_matches:
                         if db.add_shopping(item):
