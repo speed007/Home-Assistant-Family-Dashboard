@@ -212,11 +212,13 @@ class SerialReader:
 class PresenceController:
     def __init__(self, mqtt_broker, mqtt_port, mqtt_user, mqtt_pass,
                   distance_threshold=200, still_energy_threshold=50,
+                  release_energy_threshold=15,
                   confirm_frames=5, release_frames=10,
                  discovery_prefix="homeassistant", device_id="ld2420_kitchen",
                  hdmi_power=False, min_on_time=60):
         self.distance_threshold = distance_threshold
         self.still_energy_threshold = still_energy_threshold
+        self.release_energy_threshold = release_energy_threshold
         self.confirm_frames = confirm_frames
         self.release_frames = release_frames
         self.discovery_prefix = discovery_prefix
@@ -353,7 +355,14 @@ class PresenceController:
         if static_gates:
             self.static_gate_energies = list(static_gates) + [0] * max(0, NUM_GATES - len(static_gates))
 
-        valid_target = (still_energy >= self.still_energy_threshold)
+        # Hysteresis: a higher threshold confirms presence, but once a target
+        # is held a much lower threshold is needed to start the release count.
+        # This stops still_energy flicker (e.g. 30-50) from dropping the screen
+        # while a person stands still in front of the sensor.
+        if self.has_target:
+            valid_target = (still_energy >= self.release_energy_threshold)
+        else:
+            valid_target = (still_energy >= self.still_energy_threshold)
 
         if valid_target:
             self._release_counter = 0
@@ -513,6 +522,7 @@ def main():
     serial_baud = int(os.environ.get("SERIAL_BAUD", 256000))
     distance_threshold = int(os.environ.get("DISTANCE_THRESHOLD", 200))
     still_energy_threshold = int(os.environ.get("STILL_ENERGY_THRESHOLD", 50))
+    release_energy_threshold = int(os.environ.get("RELEASE_ENERGY_THRESHOLD", 15))
     confirm_frames = int(os.environ.get("CONFIRM_FRAMES", 5))
     release_frames = int(os.environ.get("RELEASE_FRAMES", 10))
     max_gate = int(os.environ.get("MAX_GATE", 2))
@@ -537,6 +547,7 @@ def main():
         mqtt_broker, mqtt_port, mqtt_user, mqtt_pass,
         distance_threshold=distance_threshold,
         still_energy_threshold=still_energy_threshold,
+        release_energy_threshold=release_energy_threshold,
         confirm_frames=confirm_frames,
         release_frames=release_frames,
         discovery_prefix=discovery_prefix,
