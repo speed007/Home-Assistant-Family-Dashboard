@@ -229,6 +229,149 @@ def _parse_time_to_24h(time_str: str) -> str | None:
     return f"{hour:02d}:{minute:02d}"
 
 
+_PREP_WORDS = {
+    "for", "with", "on", "at", "about", "regarding", "by", "in", "from",
+    "to", "the", "a", "an", "of", "this", "next",
+}
+
+_WEEKDAYS = {
+    "monday": 0, "mon": 0,
+    "tuesday": 1, "tue": 1, "tues": 1,
+    "wednesday": 2, "wed": 2,
+    "thursday": 3, "thu": 3, "thur": 3, "thurs": 3,
+    "friday": 4, "fri": 4,
+    "saturday": 5, "sat": 5,
+    "sunday": 6, "sun": 6,
+}
+
+_MONTHS = {
+    "january": 1, "jan": 1,
+    "february": 2, "feb": 2,
+    "march": 3, "mar": 3,
+    "april": 4, "apr": 4,
+    "may": 5,
+    "june": 6, "jun": 6,
+    "july": 7, "jul": 7,
+    "august": 8, "aug": 8,
+    "september": 9, "sep": 9, "sept": 9,
+    "october": 10, "oct": 10,
+    "november": 11, "nov": 11,
+    "december": 12, "dec": 12,
+}
+
+
+def _strip_tail(word: str) -> str:
+    return word.strip(".,;:!?()\"'")
+
+
+def _next_weekday_date(day_idx: int) -> str:
+    today = datetime.now().date()
+    days_ahead = (day_idx - today.weekday()) % 7
+    if days_ahead == 0:
+        days_ahead = 7
+    return (today + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
+
+
+def _date_from_day_month(day: int, month: int) -> str | None:
+    today = datetime.now().date()
+    year = today.year
+    try:
+        d = datetime(year, month, day).date()
+    except ValueError:
+        return None
+    if d < today:
+        try:
+            d = datetime(year + 1, month, day).date()
+        except ValueError:
+            return None
+    return d.strftime("%Y-%m-%d")
+
+
+def _scan_time(token: str, next_token: str | None):
+    candidates = []
+    if next_token is not None and _strip_tail(next_token).lower() in ("am", "pm"):
+        candidates.append((token + _strip_tail(next_token).lower(), True))
+    if re.search(r"[:]|am|pm", token.lower()):
+        candidates.append((token, False))
+    for text, consumed in candidates:
+        pt = _parse_time_to_24h(text)
+        if pt:
+            return pt, consumed
+    return None, False
+
+
+def _parse_appointment_fields(rest: str):
+    tokens = rest.split()
+    date_val = None
+    time_val = None
+    title_parts = []
+    i = 0
+    n = len(tokens)
+    while i < n:
+        tok = tokens[i]
+        low = _strip_tail(tok).lower()
+
+        pt, consumed_next = _scan_time(tok, tokens[i + 1] if i + 1 < n else None)
+        if pt:
+            if time_val is None:
+                time_val = pt
+            if consumed_next:
+                i += 1
+            i += 1
+            continue
+
+        if date_val is None:
+            pd = parse_uk_date(tok)
+            if pd:
+                date_val = pd
+                i += 1
+                continue
+
+        if date_val is None and low in ("today", "tonight"):
+            date_val = datetime.now().date().strftime("%Y-%m-%d")
+            i += 1
+            continue
+        if date_val is None and low in ("tomorrow", "tmrw", "tmw"):
+            date_val = (datetime.now().date() + timedelta(days=1)).strftime("%Y-%m-%d")
+            i += 1
+            continue
+        if date_val is None and low in _WEEKDAYS:
+            date_val = _next_weekday_date(_WEEKDAYS[low])
+            i += 1
+            continue
+
+        if date_val is None:
+            day_match = re.match(r"^(\d{1,2})(?:st|nd|rd|th)?$", low)
+            if day_match and i + 1 < n:
+                nxt = _strip_tail(tokens[i + 1]).lower()
+                if nxt in _MONTHS:
+                    d = _date_from_day_month(int(day_match.group(1)), _MONTHS[nxt])
+                    if d:
+                        date_val = d
+                        i += 2
+                        continue
+
+        if date_val is None and low in _MONTHS and i + 1 < n:
+            nxt = _strip_tail(tokens[i + 1]).lower()
+            day_match = re.match(r"^(\d{1,2})(?:st|nd|rd|th)?$", nxt)
+            if day_match:
+                d = _date_from_day_month(int(day_match.group(1)), _MONTHS[low])
+                if d:
+                    date_val = d
+                    i += 2
+                    continue
+
+        if low in _PREP_WORDS:
+            i += 1
+            continue
+
+        title_parts.append(tok)
+        i += 1
+
+    title = " ".join(title_parts).strip() or rest.strip()
+    return date_val, time_val, title
+
+
 def push_appointment_to_ha_calendar(title: str, date: str | None, time: str | None):
     if not HA_URL or not HA_TOKEN:
         logger.debug("HA_URL/HA_TOKEN not set — skipping HA calendar push.")
@@ -525,33 +668,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             rest = appt_match.group(1).strip()
             rest = re.sub(r"^(?:for|with|on|at|about|regarding)\s+", "", rest, flags=re.IGNORECASE).strip()
 
-            tokens = rest.split()
-            date_val = time_val = None
-            pre_parts, between_parts, post_parts = [], [], []
-            found_date = False
-            found_time = False
-
-            for token in tokens:
-                if not found_date:
-                    parsed_iso = parse_uk_date(token)
-                    if parsed_iso:
-                        date_val = parsed_iso
-                        found_date = True
-                    else:
-                        pre_parts.append(token)
-                elif not found_time:
-                    if re.match(r"^\d{1,2}:\d{2}$", token):
-                        time_val = token
-                        found_time = True
-                    else:
-                        between_parts.append(token)
-                else:
-                    post_parts.append(token)
-
-            title_parts = pre_parts + between_parts + post_parts
-            title_val = " ".join(title_parts).strip() if title_parts else rest
-            if not found_date and not found_time:
-                title_val = rest
+            date_val, time_val, title_val = _parse_appointment_fields(rest)
 
             db.add_appointment(title_val, date=date_val, time=time_val)
             publish_appointments()
