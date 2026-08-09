@@ -16,10 +16,18 @@ apply_portrait() {
 apply_portrait
 
 # CEC wake-up can make the compositor restore the HDMI output to landscape.
-# Reapply the transform while Cog is running so wake-up returns to portrait.
+# Check the current transform and only reconfigure when it actually changed.
+ensure_portrait() {
+    local transform
+    transform=$(wlr-randr --output HDMI-A-1 2>/dev/null | awk '$1 == "Transform:" { print $2; exit }')
+    if [ -n "$transform" ] && [ "$transform" != "270" ]; then
+        apply_portrait
+    fi
+}
+
 (
     while sleep 2; do
-        apply_portrait
+        ensure_portrait
     done
 ) &
 ORIENTATION_WATCHDOG_PID=$!
