@@ -671,12 +671,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             date_val, time_val, title_val = _parse_appointment_fields(rest)
 
             db.add_appointment(title_val, date=date_val, time=time_val)
-            publish_appointments()
-            _background_ha_call(push_appointment_to_ha_calendar, title_val, date_val, time_val)
             display_when = f"on {date_val}" if date_val else "unscheduled"
             if time_val:
                 display_when += f" at {time_val}"
             await _reply(update,f"Appointment added ({display_when}): \"{title_val}\"")
+            publish_appointments()
+            _background_ha_call(push_appointment_to_ha_calendar, title_val, date_val, time_val)
             return
 
         item_to_add = None
