@@ -227,3 +227,5 @@ Bulk Clear: Matches clear menu, clear meal plan, reset menu, delete menu.
 
 
 All sensitive database entries (*.db), persistent system logs (logs/), localized runtime keys (.env), and security credentials directories (mosquitto/config/passwd) are explicitly managed by standard root boundaries and strictly filtered out via the workspace .gitignore array.
+
+**Note on MQTT credentials:** Vite embeds `VITE_MQTT_*` values into the built JS bundle, so anyone who can reach the dashboard can extract those broker credentials from view-source. Mosquitto ACLs limit what those credentials can do — see `mosquitto.acl-example` for a ready-made read-only `dashboard` role setup (takes ~5 minutes to enable).

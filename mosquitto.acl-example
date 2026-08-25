@@ -1,0 +1,37 @@
+# Mosquitto ACL example — least-privilege topic access.
+#
+# Why: the React dashboard ships its MQTT credentials inside the browser JS
+# bundle (Vite embeds VITE_MQTT_* at build time), so ANYONE on the network can
+# extract them from view-source. Without ACLs those credentials allow full
+# publish/subscribe on every topic — including screen power control.
+#
+# Setup:
+#   1. Create one mosquitto user per role (usernames below MUST match):
+#        sudo mosquitto_passwd -c mosquitto/config/passwd ha
+#        sudo mosquitto_passwd -b mosquitto/config/passwd bot <password>
+#        sudo mosquitto_passwd -b mosquitto/config/passwd kiosk <password>
+#        sudo mosquitto_passwd -b mosquitto/config/passwd dashboard <password>
+#   2. Copy this file to mosquitto/config/acl and edit usernames to match.
+#   3. Uncomment the two acl_file lines in mosquitto.conf.
+#   4. Use matching credentials in .env (MQTT_USER=bot), presence_config.env
+#      (kiosk), and dashboard/.env (dashboard).
+#   5. docker compose restart mqtt
+
+# Home Assistant — full control
+user ha
+topic readwrite #
+
+# Telegram bot — owns the dashboard data topics
+user bot
+topic readwrite home/dashboard/#
+topic read $SYS/#
+
+# Pi Zero 2W presence daemon — publishes sensor data, receives screen commands
+user kiosk
+topic write home/dashboard/kitchen/presence
+topic write homeassistant/#
+topic read home/dashboard/kitchen/screen/set
+
+# Browser dashboards — read-only consumers
+user dashboard
+topic read home/dashboard/#
