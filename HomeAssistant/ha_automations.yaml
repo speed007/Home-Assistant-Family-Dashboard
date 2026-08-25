@@ -202,6 +202,43 @@
         brightness: 200
       continue_on_error: true
 
+# ==================== PRAYER TIMES ====================
+
+# Pushes live Adhan timestamps and the Hijri date to the dashboard over MQTT.
+# The React UI reads topic `home/dashboard/prayer_times` — the `Hijri` key is
+# rendered in the card header, the five prayer keys render as time cards.
+# Requires a prayer-times integration exposing these sensors (update the
+# entity_ids to match your install):
+#   sensor.fajr_begins_time, sensor.zuhr_begins_time, sensor.asr_begins_time,
+#   sensor.isha_begins_time, sensor.local_hijri_date (+ sun.sun for Maghrib)
+- id: 'dashboard_sync_prayer_times'
+  alias: "Dashboard: Sync Prayer Times"
+  description: >-
+    Pushes live Adhan timestamps and Hijri date directly down to the React
+    UI layout layer.
+  triggers:
+    - at: "00:05:00"
+      trigger: time
+    - event: start
+      trigger: homeassistant
+  actions:
+    - action: mqtt.publish
+      data:
+        topic: home/dashboard/prayer_times
+        retain: true
+        payload: >-
+          {"Hijri":"{{ states("sensor.local_hijri_date") }}","Fajr":"{{ as_timestamp(states("sensor.fajr_begins_time"), default=0) |
+          timestamp_custom("%I:%M %p", true, "12:00 AM") }}","Dhuhr":"{{
+          as_timestamp(states("sensor.zuhr_begins_time"), default=0) |
+          timestamp_custom("%I:%M %p", true, "12:00 AM") }}","Asr":"{{
+          as_timestamp(states("sensor.asr_begins_time"), default=0) |
+          timestamp_custom("%I:%M %p", true, "12:00 AM") }}","Maghrib":"{{
+          as_timestamp(state_attr("sun.sun", "next_setting"), default=0) |
+          timestamp_custom("%I:%M %p", true, "12:00 AM") }}","Isha":"{{
+          as_timestamp(states("sensor.isha_begins_time"), default=0) |
+          timestamp_custom("%I:%M %p", true, "12:00 AM") }}"}
+  mode: single
+
 # ==================== NOTIFICATIONS ====================
 # Configure these in your configuration.yaml:
 # notify:

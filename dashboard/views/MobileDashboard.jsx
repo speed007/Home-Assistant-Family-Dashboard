@@ -47,9 +47,9 @@ const MobileDashboard = () => {
 
         <section style={styles.glassCard}>
           <div style={{ ...styles.cardAccentBar, background: 'linear-gradient(90deg, #3b82f6, #06b6d4)' }}></div>
-          <h2 style={styles.cardTitle}>🕌 Prayer Times</h2>
+          <h2 style={styles.cardTitle}>🕌 Prayer Times{prayerTimes?.Hijri ? ` — ${prayerTimes.Hijri}` : ''}</h2>
           <div style={styles.prayerMobileGrid}>
-            {Object.entries(prayerTimes).map(([name, timeValue]) => (
+            {Object.entries(prayerTimes).filter(([name]) => name !== 'Hijri').map(([name, timeValue]) => (
               <div key={name} style={styles.prayerBadge}>
                 <span style={styles.prayerIconText}>{PRAYER_ICONS[name]} {name}</span>
                 <span style={styles.prayerTimeText}>{timeValue}</span>

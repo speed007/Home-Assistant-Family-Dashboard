@@ -53,11 +53,11 @@ const PortraitKiosk = () => {
             <span style={styles.prayerTitleIcon}>🕌</span>
             <div style={styles.prayerHeaderText}>
               <h2 style={styles.prayerMainTitle}>Prayer Times</h2>
-              <span style={styles.prayerSubTitle}>• Today's Schedule</span>
+              <span style={styles.prayerSubTitle}>{prayerTimes?.Hijri ? `• ${prayerTimes.Hijri}` : "• Today's Schedule"}</span>
             </div>
           </div>
           <div style={styles.prayerGrid}>
-            {Object.entries(prayerTimes).map(([name, timeValue]) => (
+            {Object.entries(prayerTimes).filter(([name]) => name !== 'Hijri').map(([name, timeValue]) => (
               <div key={name} style={styles.prayerColumnCard}>
                 <span style={styles.prayerCardIcon}>{PRAYER_ICONS[name] || '🕌'}</span>
                 <span style={styles.prayerCardTime}>{timeValue}</span>
