@@ -97,7 +97,7 @@ _mqtt_client = None
 
 def _init_mqtt():
     global _mqtt_client
-    _mqtt_client = mqtt.Client()
+    _mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
     if MQTT_USER and MQTT_PASS:
         _mqtt_client.username_pw_set(MQTT_USER, MQTT_PASS)
     try:
@@ -139,8 +139,8 @@ def _now():
     return datetime.now(timezone.utc).isoformat(timespec="seconds") + "Z"
 
 
-def _reply(update: Update, text: str, parse_mode: str | None = None) -> object | None:
-    msg = update.message.reply_text(text, parse_mode=parse_mode)
+async def _reply(update: Update, text: str, parse_mode: str | None = None) -> object | None:
+    msg = await update.message.reply_text(text, parse_mode=parse_mode)
     try:
         db.add_bot_message(msg.message_id, msg.chat.id)
     except Exception:
@@ -454,8 +454,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_name = update.message.from_user.first_name or "Family Member"
         low_text = raw_text.lower().strip()
 
-        db.add_bot_message(update.message.message_id, update.message.chat.id)
-
         WEEKLY_MEAL_PLAN = load_weekly_meal_plan()
 
         db.prune_expired_appointments()
@@ -718,13 +716,9 @@ async def _periodic_cleanup(context: ContextTypes.DEFAULT_TYPE):
 async def _cleanup_old_messages(context: ContextTypes.DEFAULT_TYPE):
     old = db.get_old_bot_messages(days=3)
     for row in old:
-        try:
-            msg = await context.bot.get_message(chat_id=row["chat_id"], message_id=row["message_id"])
-            if msg.is_pinned:
-                logger.info(f"Skipping pinned message #{row['message_id']}")
-                continue
-        except Exception:
-            pass
+        if row.get("pinned"):
+            logger.info(f"Skipping pinned message #{row['message_id']}")
+            continue
         try:
             await context.bot.delete_message(chat_id=row["chat_id"], message_id=row["message_id"])
             db.delete_bot_message_record(row["id"])
@@ -748,6 +742,17 @@ async def track_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
 
 
+async def track_pinned_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    pinned = update.message.pinned_message if update.message else None
+    if not pinned:
+        return
+    try:
+        db.mark_message_pinned(pinned.message_id, update.message.chat.id)
+        logger.info(f"Message #{pinned.message_id} marked pinned — cleanup will skip it")
+    except Exception as e:
+        logger.debug(f"Could not mark pinned message #{pinned.message_id}: {e}")
+
+
 def main():
     db.init_db()
     logger.info(f"SQLite database ready at {db.DB_PATH}")
@@ -763,6 +768,7 @@ def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(MessageHandler(filters.StatusUpdate.PINNED_MESSAGE, track_pinned_message))
     app.add_handler(MessageHandler(filters.ALL, track_message))
     app.job_queue.run_repeating(_periodic_cleanup, interval=900, first=300)
     app.job_queue.run_daily(_cleanup_old_messages, time=time(hour=4, minute=0))

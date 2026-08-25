@@ -51,6 +51,7 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 message_id INTEGER NOT NULL,
                 chat_id INTEGER NOT NULL,
+                pinned INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL
             );
             """
@@ -60,6 +61,11 @@ def init_db():
     with _connect() as conn:
         try:
             conn.execute("ALTER TABLE daily_notes ADD COLUMN author TEXT NOT NULL DEFAULT ''")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE bot_messages ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
             conn.commit()
         except sqlite3.OperationalError:
             pass
@@ -289,11 +295,20 @@ def add_bot_message(message_id: int, chat_id: int):
         conn.commit()
 
 
+def mark_message_pinned(message_id: int, chat_id: int):
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE bot_messages SET pinned = 1 WHERE message_id = ? AND chat_id = ?",
+            (message_id, chat_id),
+        )
+        conn.commit()
+
+
 def get_old_bot_messages(days: int = 3) -> list[dict]:
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT id, message_id, chat_id FROM bot_messages WHERE created_at < ?",
+            "SELECT id, message_id, chat_id, pinned FROM bot_messages WHERE created_at < ?",
             (cutoff,),
         ).fetchall()
         return [dict(r) for r in rows]
