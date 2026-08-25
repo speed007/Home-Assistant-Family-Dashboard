@@ -51,9 +51,11 @@ const PortraitKiosk = () => {
           <div style={{ ...styles.cardAccentBar, background: 'linear-gradient(90deg, #3b82f6, #06b6d4)' }}></div>
           <div style={styles.prayerHeader}>
             <span style={styles.prayerTitleIcon}>🕌</span>
-            <div style={styles.prayerHeaderText}>
+            <div style={{ ...styles.prayerHeaderText, flexDirection: 'column', alignItems: 'center' }}>
               <h2 style={styles.prayerMainTitle}>Prayer Times</h2>
-              <span style={styles.prayerSubTitle}>{prayerTimes?.Hijri ? `• ${prayerTimes.Hijri}` : "• Today's Schedule"}</span>
+              {prayerTimes?.Hijri && (
+                <span style={styles.hijriDate}>{prayerTimes.Hijri}</span>
+              )}
             </div>
           </div>
           <div style={styles.prayerGrid}>
@@ -236,6 +238,7 @@ const styles = {
   prayerHeaderText: { display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '4px' },
   prayerMainTitle: { fontSize: '15px', fontWeight: '700', color: '#ffffff', margin: 0 },
   prayerSubTitle: { fontSize: '12px', color: '#6b7280', margin: 0, fontWeight: '500' },
+  hijriDate: { fontSize: '13px', color: '#d1d5db', margin: 0, fontWeight: '600' },
   prayerGrid: { display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px', flex: 1, minHeight: 0 },
 
   prayerColumnCard: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '4px 2px', background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.05)', borderRadius: '10px', textAlign: 'center', height: '85%' },

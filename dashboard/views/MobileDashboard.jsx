@@ -47,7 +47,10 @@ const MobileDashboard = () => {
 
         <section style={styles.glassCard}>
           <div style={{ ...styles.cardAccentBar, background: 'linear-gradient(90deg, #3b82f6, #06b6d4)' }}></div>
-          <h2 style={styles.cardTitle}>🕌 Prayer Times{prayerTimes?.Hijri ? ` — ${prayerTimes.Hijri}` : ''}</h2>
+          <h2 style={styles.cardTitle}>🕌 Prayer Times</h2>
+          {prayerTimes?.Hijri && (
+            <p style={styles.hijriDate}>{prayerTimes.Hijri}</p>
+          )}
           <div style={styles.prayerMobileGrid}>
             {Object.entries(prayerTimes).filter(([name]) => name !== 'Hijri').map(([name, timeValue]) => (
               <div key={name} style={styles.prayerBadge}>
@@ -195,6 +198,7 @@ const styles = {
   glassCard: { position: 'relative', background: 'rgba(17, 24, 39, 0.45)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', borderRadius: '16px', padding: '16px', border: '1px solid rgba(255, 255, 255, 0.07)', boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.37)', display: 'flex', flexDirection: 'column', flex: '1 1 320px', boxSizing: 'border-box', overflow: 'hidden' },
   cardAccentBar: { position: 'absolute', top: 0, left: 0, right: 0, height: '3px' },
   cardTitle: { fontSize: '16px', fontWeight: '700', margin: '0 0 12px 0', color: '#f3f4f6', textTransform: 'uppercase', letterSpacing: '0.5px' },
+  hijriDate: { fontSize: '13px', color: '#d1d5db', margin: '0 0 8px 0', fontWeight: '600', textAlign: 'center' },
   subTitle: { fontSize: '13px', textTransform: 'uppercase', color: '#6b7280', letterSpacing: '0.5px', fontWeight: '700', marginBottom: '8px' },
 
   prayerMobileGrid: { display: 'flex', flexDirection: 'column', gap: '8px' },
