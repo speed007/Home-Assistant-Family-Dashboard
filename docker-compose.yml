@@ -21,21 +21,29 @@ services:
       timeout: 10s
       retries: 3
 
-  mqtt:
-    image: eclipse-mosquitto:latest
-    container_name: mosquitto
-    restart: unless-stopped
-    ports:
-      - "1883:1883"
-      - "9001:9001"
-    volumes:
-      - ./mosquitto/config:/mosquitto/config
-      - ./mosquitto/data:/mosquitto/data
-      - ./mosquitto/log:/mosquitto/log
-    networks:
-      - home-automation
-    environment:
-      - TZ=UTC
+  # ── MQTT broker ─────────────────────────────────────────────────────────
+  # Included for convenience if you don't already run a broker.
+  # If you have your own (e.g. the Mosquitto add-on bundled with Home
+  # Assistant), comment this whole block out and point MQTT_BROKER in .env,
+  # SERIAL/presence_config.env and VITE_MQTT_BROKER_WS in dashboard/.env at
+  # your existing broker instead.
+  #
+  # mqtt:
+  #   image: eclipse-mosquitto:latest
+  #   container_name: mosquitto
+  #   restart: unless-stopped
+  #   ports:
+  #     - "1883:1883"
+  #     - "9001:9001"
+  #   volumes:
+  #     - ./mosquitto/config:/mosquitto/config
+  #     - ./mosquitto/data:/mosquitto/data
+  #     - ./mosquitto/log:/mosquitto/log
+  #   networks:
+  #     - home-automation
+  #   environment:
+  #     - TZ=UTC
+  # ────────────────────────────────────────────────────────────────────────
 
   dashboard-web:
     image: nginx:alpine
