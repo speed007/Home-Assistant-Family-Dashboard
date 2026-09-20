@@ -355,14 +355,17 @@ class PresenceController:
         if static_gates:
             self.static_gate_energies = list(static_gates) + [0] * max(0, NUM_GATES - len(static_gates))
 
-        # Hysteresis: a higher threshold confirms presence, but once a target
-        # is held a much lower threshold is needed to start the release count.
-        # This stops still_energy flicker (e.g. 30-50) from dropping the screen
-        # while a person stands still in front of the sensor.
+        # The sensor's own target detection (target_status in 1..3) is used to
+        # gate ACQUISITION only: presence is confirmed only when the sensor
+        # actually reports a target AND still_energy is above the confirm
+        # threshold. This stops noise spikes (sensor reporting state=0, no
+        # target, but a still_e spike crossing the threshold) from falsely
+        # turning the screen back on. Release stays energy-only because the
+        # sensor reports target_status=2 almost constantly in this install.
         if self.has_target:
             valid_target = (still_energy >= self.release_energy_threshold)
         else:
-            valid_target = (still_energy >= self.still_energy_threshold)
+            valid_target = has_target and (still_energy >= self.still_energy_threshold)
 
         if valid_target:
             self._release_counter = 0
