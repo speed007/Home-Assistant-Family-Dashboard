@@ -13,6 +13,7 @@ Sources
 """
 
 import html
+import json
 import logging
 import re
 import threading
@@ -51,10 +52,15 @@ GD_COURSE_API = "https://gimmedelicious.com/wp-json/wp/v2/wprm_course"
 GD_PER_PAGE = 100
 GD_MEAL_COURSE_SLUGS = ("dinner", "main", "main-course", "lunch", "lunch-or-side")
 
+ZAB_API = "https://zabihahalal.com/wp-json/wp/v2/recipe"
+ZAB_CATEGORY_API = "https://zabihahalal.com/wp-json/wp/v2/recipe_categories"
+ZAB_MEAL_CATEGORY_SLUGS = ("dinner", "souper", "lunch", "diner", "kids", "enfants")
+
 SOURCE_NAMES = {
     "halalmealplan": "Halal Meal Plan",
     "amiraspantry": "Amira's Pantry",
     "gimmedelicious": "Gimme Delicious",
+    "zabihahalal": "Zabiha Halal",
 }
 
 SOURCE_ALIASES = {
@@ -74,6 +80,9 @@ SOURCE_ALIASES = {
     "gimme delicious": "gimmedelicious",
     "gimmedelicious": "gimmedelicious",
     "gimmedelicious.com": "gimmedelicious",
+    "zabiha": "zabihahalal",
+    "zabihahalal": "zabihahalal",
+    "zabihahalal.com": "zabihahalal",
 }
 
 # ----------------------------------------------------- Cuisine normalisation
@@ -435,6 +444,123 @@ def _slugify(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", (text or "").lower()).strip("-")
 
 
+def _num(text):
+    if not text:
+        return None
+    m = re.search(r"(\d+(?:\.\d+)?)", str(text))
+    return m.group(1) if m else None
+
+
+def _iso_duration_minutes(value):
+    if not value or not isinstance(value, str):
+        return None
+    m = re.match(r"P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?", value)
+    if not m:
+        return None
+    days, hours, mins = (int(x) if x else 0 for x in m.groups())
+    total = days * 1440 + hours * 60 + mins
+    return total or None
+
+
+def _walk_recipes(obj):
+    if isinstance(obj, dict):
+        t = obj.get("@type")
+        if t == "Recipe" or (isinstance(t, list) and "Recipe" in t):
+            yield obj
+        for v in obj.values():
+            yield from _walk_recipes(v)
+    elif isinstance(obj, list):
+        for v in obj:
+            yield from _walk_recipes(v)
+
+
+def _balanced_json_block(text: str, start: int):
+    open_ch = text[start]
+    close_ch = "]" if open_ch == "[" else "}"
+    depth = 0
+    in_str = False
+    esc = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+        elif ch == '"':
+            in_str = True
+        elif ch == open_ch:
+            depth += 1
+        elif ch == close_ch:
+            depth -= 1
+            if depth == 0:
+                return text[start:i + 1]
+    return None
+
+
+def _raw_json_field_block(block: str, key: str):
+    m = re.search(r'"' + re.escape(key) + r'"\s*:', block)
+    if not m:
+        return None
+    j = m.end()
+    while j < len(block) and block[j] not in "[{":
+        j += 1
+    if j >= len(block):
+        return None
+    return _balanced_json_block(block, j)
+
+
+def _raw_json_str(block: str, key: str):
+    m = re.search(r'"' + re.escape(key) + r'"\s*:\s*"((?:[^"\\]|\\.)*)"', block)
+    return m.group(1) if m else None
+
+
+def _recipe_from_broken_jsonld(block: str):
+    """Recover a Recipe from JSON-LD that fails strict parsing (e.g. unescaped
+    quotes in HTML descriptions — as seen on zabihahalal.com)."""
+    if not re.search(r'"@type"\s*:\s*"Recipe"', block):
+        return None
+    ingredients = []
+    ing_block = _raw_json_field_block(block, "recipeIngredient")
+    if ing_block:
+        ingredients = re.findall(r'"((?:[^"\\]|\\.)*)"', ing_block)
+    nutrition = {}
+    nut_block = _raw_json_field_block(block, "nutrition")
+    if nut_block:
+        nutrition["calories"] = _raw_json_str(nut_block, "calories")
+    return {
+        "name": _raw_json_str(block, "name"),
+        "recipeIngredient": ingredients,
+        "totalTime": _raw_json_str(block, "totalTime"),
+        "prepTime": _raw_json_str(block, "prepTime"),
+        "cookTime": _raw_json_str(block, "cookTime"),
+        "recipeYield": _raw_json_str(block, "recipeYield"),
+        "recipeCuisine": _raw_json_str(block, "recipeCuisine"),
+        "description": _raw_json_str(block, "description"),
+        "nutrition": nutrition,
+    }
+
+
+def _jsonld_recipes(html_text: str):
+    """Extract schema.org Recipe objects from a page's JSON-LD blocks."""
+    found = []
+    for block in re.findall(
+        r'<script type="application/ld\+json"[^>]*>(.*?)</script>', html_text, re.S
+    ):
+        cleaned = re.sub(r"[\x00-\x1f]+", " ", block)
+        try:
+            data = json.loads(cleaned)
+        except (ValueError, TypeError):
+            recovered = _recipe_from_broken_jsonld(cleaned)
+            if recovered:
+                found.append(recovered)
+            continue
+        found.extend(_walk_recipes(data))
+    return found
+
+
 def _ingredients_safe(ingredients_lower: str) -> bool:
     if not ingredients_lower:
         return False  # no ingredient list -> can't verify, skip
@@ -557,10 +683,110 @@ def fetch_gimmedelicious() -> list[dict]:
     return recipes
 
 
+def _zab_meal_category_ids() -> str:
+    try:
+        resp = requests.get(
+            ZAB_CATEGORY_API,
+            headers={"User-Agent": USER_AGENT},
+            timeout=20,
+            params={"per_page": 100, "_fields": "id,slug"},
+        )
+        resp.raise_for_status()
+        by_slug = {t.get("slug"): t.get("id") for t in resp.json() if isinstance(t, dict)}
+        return ",".join(str(by_slug[s]) for s in ZAB_MEAL_CATEGORY_SLUGS if s in by_slug)
+    except Exception:
+        logger.warning("Could not resolve zabihahalal meal categories")
+        return ""
+
+
+def _parse_zab_page(html_text: str, link: str, title_obj: dict):
+    nodes = _jsonld_recipes(html_text)
+    if not nodes:
+        return None
+    rec = nodes[0]
+
+    ingredients = rec.get("recipeIngredient") or []
+    if not _ingredients_safe(" ".join(str(x) for x in ingredients).lower()):
+        return None
+
+    nutrition = rec.get("nutrition") or {}
+    total = _iso_duration_minutes(rec.get("totalTime"))
+    if total is None:
+        total = (_iso_duration_minutes(rec.get("prepTime")) or 0) + (
+            _iso_duration_minutes(rec.get("cookTime")) or 0
+        ) or None
+
+    cuisine = rec.get("recipeCuisine")
+    if isinstance(cuisine, list):
+        cuisine = cuisine[0] if cuisine else None
+
+    slug = link.rstrip("/").split("/")[-1]
+    return {
+        "source": "zabihahalal",
+        "slug": slug,
+        "title": _clean(rec.get("name")) or _clean((title_obj or {}).get("rendered")),
+        "cuisine": cuisine,
+        "cuisine_slug": _slugify(cuisine) if cuisine else None,
+        "url": link,
+        "tags": "",
+        "minutes": total,
+        "servings": _int(_num(rec.get("recipeYield"))),
+        "calories": _int(_num(nutrition.get("calories"))),
+        "protein": _int(_num(nutrition.get("proteinContent"))),
+        "difficulty": None,
+        "description": _clean(rec.get("description")),
+    }
+
+
+def fetch_zabihahalal() -> list[dict]:
+    recipes: list[dict] = []
+    meal_ids = _zab_meal_category_ids()
+    session = requests.Session()
+    session.headers.update({"User-Agent": USER_AGENT})
+
+    page = 1
+    try:
+        while True:
+            params = {"per_page": 100, "page": page, "_fields": "link,title"}
+            if meal_ids:
+                params["recipe_categories"] = meal_ids
+            resp = session.get(ZAB_API, timeout=40, params=params)
+            if resp.status_code == 400 and page > 1:
+                break
+            resp.raise_for_status()
+            batch = resp.json()
+            if not isinstance(batch, list) or not batch:
+                break
+
+            for item in batch:
+                link = item.get("link") or ""
+                # Skip the French duplicates (site is bilingual).
+                if not link or "/fr/" in link:
+                    continue
+                try:
+                    page_resp = session.get(link, timeout=30)
+                    page_resp.raise_for_status()
+                    parsed = _parse_zab_page(page_resp.text, link, item.get("title"))
+                except Exception:
+                    logger.warning("zabihahalal: could not read %s", link)
+                    continue
+                if parsed and parsed["title"]:
+                    recipes.append(parsed)
+
+            if len(batch) < 100:
+                break
+            page += 1
+    finally:
+        session.close()
+
+    return recipes
+
+
 SOURCES = {
     "halalmealplan": fetch_halalmealplan,
     "amiraspantry": fetch_amiraspantry,
     "gimmedelicious": fetch_gimmedelicious,
+    "zabihahalal": fetch_zabihahalal,
 }
 
 
