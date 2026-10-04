@@ -431,6 +431,130 @@ def publish_appointments():
     publish_to_dashboard("home/dashboard/manual_appointments", {"events": db.get_appointments()})
 
 
+# ---------- Menu display helpers ----------
+
+_WEEKDAY_ORDER = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+
+_DAY_ALIASES = {
+    "mon": "monday", "monday": "monday",
+    "tue": "tuesday", "tues": "tuesday", "tuesday": "tuesday",
+    "wed": "wednesday", "weds": "wednesday", "wednesday": "wednesday",
+    "thu": "thursday", "thur": "thursday", "thurs": "thursday", "thursday": "thursday",
+    "fri": "friday", "friday": "friday",
+    "sat": "saturday", "saturday": "saturday",
+    "sun": "sunday", "sunday": "sunday",
+}
+
+_WEEK_SPECS = {
+    "week", "the week", "weekly", "all", "all week", "full", "full week",
+    "whole week", "entire week", "week ahead", "this week", "next week",
+    "7 days", "seven days",
+}
+
+
+def _parse_menu_days(spec: str):
+    """Resolve a menu day selection into 'default', 'week', or a day list.
+
+    Returns None when the spec is not a recognisable day selection, so the
+    caller can fall through to the meal-override (set) handler.
+    """
+    spec = (spec or "").strip().lower()
+    spec = re.sub(r"\s+(?:please|pls|plz)\s*$", "", spec).strip()
+    spec = re.sub(r"^(?:the|for)\s+", "", spec, count=1).strip()
+    if spec == "":
+        return "default"
+    if spec in _WEEK_SPECS:
+        return "week"
+    parts = [p.strip() for p in re.split(r"\s*(?:,|/|&|\+|\band\b)\s*", spec) if p.strip()]
+    days = []
+    for part in parts:
+        if part in ("today", "tomorrow"):
+            days.append(part)
+        elif part in _DAY_ALIASES:
+            days.append(_DAY_ALIASES[part])
+        else:
+            return None
+    return days or None
+
+
+def _menu_body(weekday, overrides, weekly, today_name, tomorrow_name):
+    override = None
+    if weekday == today_name and "today" in overrides:
+        override = overrides["today"]
+    elif weekday == tomorrow_name and "tomorrow" in overrides:
+        override = overrides["tomorrow"]
+    elif weekday in overrides:
+        override = overrides[weekday]
+    if override:
+        return f"Override: {override}"
+    meals = weekly.get(weekday) or ["None configured"]
+    return "\n".join(f"- {m}" for m in meals)
+
+
+def _menu_view_message(low_text, overrides, weekly, now_dt):
+    """Return a formatted menu reply when the text is a menu-view request.
+
+    Returns None when the text is not a menu view (e.g. a meal override like
+    "menu monday burgers") so the caller can fall through to other handlers.
+    """
+    text = low_text.strip()
+
+    verb = re.match(r"^(?:list|view|show|get)\s+(.+)$", text)
+    if verb:
+        text = verb.group(1).strip()
+
+    if text in ("meals", "meal", "menu", "food", "dinner", "meal plan",
+                "whats for dinner", "what's for dinner", "whats for tea"):
+        spec = ""
+    else:
+        m = re.match(r"^(?:meal|menu|food|dinner|meals|dinners)\b\s*(.*)$", text)
+        if m:
+            rest = m.group(1).strip()
+            if rest.startswith("for "):
+                rest = rest[4:].strip()
+            spec = rest
+        else:
+            m = re.match(
+                r"^(?:full|whole|entire|weekly)\s+(?:week\s+)?"
+                r"(?:meal plan|menu|meals|food|dinner)\b\s*(.*)$",
+                text,
+            )
+            if m:
+                spec = m.group(1).strip() or "week"
+            else:
+                return None
+
+    days = _parse_menu_days(spec)
+    if days is None:
+        return None
+
+    today_name = now_dt.strftime("%A").lower()
+    tomorrow_name = (now_dt + timedelta(days=1)).strftime("%A").lower()
+
+    def resolve(label):
+        if label == "today":
+            return "Today", today_name
+        if label == "tomorrow":
+            return "Tomorrow", tomorrow_name
+        return label.capitalize(), label
+
+    if days == "default":
+        entries = [resolve("today"), resolve("tomorrow")]
+        title = "Family Menu Outlook"
+    elif days == "week":
+        entries = [(d.capitalize(), d) for d in _WEEKDAY_ORDER]
+        title = "Family Menu Outlook — Full Week"
+    else:
+        entries = [resolve(d) for d in days]
+        title = "Family Menu Outlook"
+
+    blocks = [
+        f"{heading.upper()}:\n{_menu_body(weekday, overrides, weekly, today_name, tomorrow_name)}"
+        for heading, weekday in entries
+    ]
+    return title + "\n\n" + "\n\n".join(blocks)
+
+
 # ---------- Telegram handlers ----------
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -441,7 +565,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Shopping: `need milk`, `buy apples`, `add to grocery eggs`\n"
         "Notes: `note lock back door`, `memo fix tap`, `sticky grab keys`\n"
         "Schedules: `schedule dentist 12/07 3pm`, `appt 15/07 MOT`\n"
-        "Meals: `menu monday burgers`, `eat friday pizza`\n\n"
+        "Meals: `menu monday burgers`, `eat friday pizza`\n"
+        "Menu view: `menu`, `menu for the week`, `menu for monday and tuesday`\n\n"
         "_Every command must be the first word(s) of the message — the bot "
         "does not scan mid-sentence for these keywords._"
     )
@@ -551,29 +676,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await _reply(update,msg, parse_mode="Markdown")
             return
 
-        if re.match(r"^(list|view|show)\s+(meal|menu|food|dinner)", low_text) or low_text in ["meals", "whats for dinner", "what's for dinner", "menu", "food", "meal plan"]:
-            current_overrides = db.get_meals()
-            now_dt = datetime.now()
-            tom_dt = now_dt + timedelta(days=1)
-            day_today = now_dt.strftime("%A").lower()
-            day_tomorrow = tom_dt.strftime("%A").lower()
-
-            if "today" in current_overrides:
-                today_display = f"Override: {current_overrides['today']}"
-            elif day_today in current_overrides:
-                today_display = f"Override ({day_today.capitalize()}): {current_overrides[day_today]}"
-            else:
-                today_display = "\n".join(f"- {m}" for m in WEEKLY_MEAL_PLAN.get(day_today, ["None configured"]))
-
-            if "tomorrow" in current_overrides:
-                tomorrow_display = f"Override: {current_overrides['tomorrow']}"
-            elif day_tomorrow in current_overrides:
-                tomorrow_display = f"Override ({day_tomorrow.capitalize()}): {current_overrides[day_tomorrow]}"
-            else:
-                tomorrow_display = "\n".join(f"- {m}" for m in WEEKLY_MEAL_PLAN.get(day_tomorrow, ["None configured"]))
-
-            msg = f"Family Menu Outlook\n\nTODAY:\n{today_display}\n\nTOMORROW:\n{tomorrow_display}"
-            await _reply(update,msg, parse_mode="Markdown")
+        menu_view = _menu_view_message(low_text, db.get_meals(), WEEKLY_MEAL_PLAN, datetime.now())
+        if menu_view is not None:
+            await _reply(update, menu_view, parse_mode="Markdown")
             return
 
         note_match = re.match(r"^(?:note|sticky|remind|remember|memo|jot|write|save|pin)\b[,\s]+(.+)", raw_text, re.IGNORECASE)
