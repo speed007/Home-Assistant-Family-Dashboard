@@ -56,9 +56,11 @@ def init_db():
             );
 
             CREATE TABLE IF NOT EXISTS recipes (
-                slug TEXT PRIMARY KEY,
+                source TEXT NOT NULL,
+                slug TEXT NOT NULL,
                 title TEXT NOT NULL,
                 cuisine TEXT,
+                cuisine_slug TEXT,
                 url TEXT NOT NULL,
                 tags TEXT,
                 minutes INTEGER,
@@ -68,7 +70,8 @@ def init_db():
                 difficulty TEXT,
                 description TEXT,
                 fetched_at TEXT NOT NULL,
-                last_offered_at TEXT
+                last_offered_at TEXT,
+                PRIMARY KEY (source, slug)
             );
             CREATE INDEX IF NOT EXISTS idx_recipes_last_offered
                 ON recipes(last_offered_at);
@@ -87,6 +90,63 @@ def init_db():
             conn.commit()
         except sqlite3.OperationalError:
             pass
+
+    _migrate_recipes_multi_source()
+
+
+def _migrate_recipes_multi_source():
+    """Upgrade a single-source recipes table to the multi-source schema.
+
+    Older databases keyed recipes by slug alone. The new schema keys by
+    (source, slug) so two sites can share recipe slugs, and adds cuisine_slug
+    for canonical filtering. Existing rows are attributed to halalmealplan.
+    """
+    with _connect() as conn:
+        cols = [row[1] for row in conn.execute("PRAGMA table_info(recipes)").fetchall()]
+        if not cols or "source" in cols:
+            return
+        conn.executescript(
+            """
+            DROP INDEX IF EXISTS idx_recipes_last_offered;
+            ALTER TABLE recipes RENAME TO recipes_legacy;
+            CREATE TABLE recipes (
+                source TEXT NOT NULL,
+                slug TEXT NOT NULL,
+                title TEXT NOT NULL,
+                cuisine TEXT,
+                cuisine_slug TEXT,
+                url TEXT NOT NULL,
+                tags TEXT,
+                minutes INTEGER,
+                servings INTEGER,
+                calories INTEGER,
+                protein INTEGER,
+                difficulty TEXT,
+                description TEXT,
+                fetched_at TEXT NOT NULL,
+                last_offered_at TEXT,
+                PRIMARY KEY (source, slug)
+            );
+            INSERT INTO recipes
+                (source, slug, title, cuisine, cuisine_slug, url, tags, minutes,
+                 servings, calories, protein, difficulty, description,
+                 fetched_at, last_offered_at)
+            SELECT 'halalmealplan', slug, title, cuisine,
+                   CASE LOWER(cuisine)
+                       WHEN 'middle eastern' THEN 'middle-eastern'
+                       WHEN 'central asian' THEN 'central-asian'
+                       WHEN 'american' THEN 'american-fusion'
+                       ELSE LOWER(REPLACE(cuisine, ' ', '-'))
+                   END,
+                   url, tags, minutes, servings, calories, protein, difficulty,
+                   description, fetched_at, last_offered_at
+            FROM recipes_legacy;
+            DROP TABLE recipes_legacy;
+            CREATE INDEX IF NOT EXISTS idx_recipes_last_offered
+                ON recipes(last_offered_at);
+            """
+        )
+        conn.commit()
 
 
 @contextmanager
@@ -358,13 +418,14 @@ def save_recipes(recipes: list[dict]):
         for r in recipes:
             conn.execute(
                 """
-                INSERT INTO recipes (slug, title, cuisine, url, tags, minutes,
-                                     servings, calories, protein, difficulty,
-                                     description, fetched_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(slug) DO UPDATE SET
+                INSERT INTO recipes (source, slug, title, cuisine, cuisine_slug,
+                                     url, tags, minutes, servings, calories,
+                                     protein, difficulty, description, fetched_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(source, slug) DO UPDATE SET
                     title = excluded.title,
                     cuisine = excluded.cuisine,
+                    cuisine_slug = excluded.cuisine_slug,
                     url = excluded.url,
                     tags = excluded.tags,
                     minutes = excluded.minutes,
@@ -376,10 +437,11 @@ def save_recipes(recipes: list[dict]):
                     fetched_at = excluded.fetched_at
                 """,
                 (
-                    r["slug"], r["title"], r.get("cuisine"), r["url"],
-                    r.get("tags", ""), r.get("minutes"), r.get("servings"),
-                    r.get("calories"), r.get("protein"), r.get("difficulty"),
-                    r.get("description"), now,
+                    r["source"], r["slug"], r["title"], r.get("cuisine"),
+                    r.get("cuisine_slug"), r["url"], r.get("tags", ""),
+                    r.get("minutes"), r.get("servings"), r.get("calories"),
+                    r.get("protein"), r.get("difficulty"), r.get("description"),
+                    now,
                 ),
             )
         conn.commit()
@@ -390,15 +452,26 @@ def get_recipe_meta() -> dict:
         row = conn.execute(
             "SELECT COUNT(*) AS n, MAX(fetched_at) AS fetched FROM recipes"
         ).fetchone()
-        return {"count": row["n"], "fetched_at": row["fetched"]}
+        src_rows = conn.execute(
+            "SELECT source, COUNT(*) AS c FROM recipes GROUP BY source"
+        ).fetchall()
+        return {
+            "count": row["n"],
+            "fetched_at": row["fetched"],
+            "sources": {r["source"]: r["c"] for r in src_rows},
+        }
 
 
-def get_recipes(cuisine: str | None = None, tags: list[str] | None = None,
-                max_minutes: int | None = None, eligible_since: str | None = None,
-                least_recent: bool = False, limit: int | None = None) -> list[dict]:
+def get_recipes(source: str | None = None, cuisine: str | None = None,
+                tags: list[str] | None = None, max_minutes: int | None = None,
+                eligible_since: str | None = None, least_recent: bool = False,
+                limit: int | None = None) -> list[dict]:
     clauses, params = [], []
+    if source:
+        clauses.append("source = ?")
+        params.append(source)
     if cuisine:
-        clauses.append("LOWER(cuisine) = ?")
+        clauses.append("cuisine_slug = ?")
         params.append(cuisine.lower())
     for tag in (tags or []):
         clauses.append("(',' || LOWER(tags) || ',') LIKE ?")
@@ -423,12 +496,12 @@ def get_recipes(cuisine: str | None = None, tags: list[str] | None = None,
         return [dict(r) for r in rows]
 
 
-def mark_recipes_offered(slugs: list[str]):
+def mark_recipes_offered(keys: list[tuple[str, str]]):
     now = _now()
     with _connect() as conn:
-        for slug in slugs:
+        for source, slug in keys:
             conn.execute(
-                "UPDATE recipes SET last_offered_at = ? WHERE slug = ?",
-                (now, slug),
+                "UPDATE recipes SET last_offered_at = ? WHERE source = ? AND slug = ?",
+                (now, source, slug),
             )
         conn.commit()

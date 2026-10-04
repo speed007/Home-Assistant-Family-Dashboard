@@ -564,6 +564,11 @@ RECIPE_SUGGEST_COUNT = int(os.getenv("RECIPE_SUGGEST_COUNT", "3"))
 RECIPE_REPEAT_DAYS = int(os.getenv("RECIPE_REPEAT_DAYS", "28"))
 RECIPE_CATALOG_MAX_AGE_DAYS = int(os.getenv("RECIPE_CATALOG_MAX_AGE_DAYS", "7"))
 
+
+def _esc(text) -> str:
+    """Escape text for Telegram HTML (keeps apostrophes literal)."""
+    return html_lib.escape(str(text or ""), quote=False)
+
 _SUGGEST_TRIGGERS = sorted([
     "what should i cook for dinner", "what should i make for dinner",
     "what should we cook for dinner", "what should we make for dinner",
@@ -578,23 +583,9 @@ _SUGGEST_TRIGGERS = sorted([
     "surprise me", "recommend", "suggest", "recipes", "recipe",
 ], key=len, reverse=True)
 
-_CUISINE_ALIASES = {
-    "indian": "indian",
-    "middle eastern": "middle-eastern", "middle-eastern": "middle-eastern",
-    "middle east": "middle-eastern", "arabic": "middle-eastern",
-    "mediterranean": "mediterranean",
-    "pakistani": "pakistani",
-    "turkish": "turkish",
-    "malaysian": "malaysian",
-    "african": "african",
-    "korean": "korean",
-    "caribbean": "caribbean",
-    "central asian": "central-asian", "central-asian": "central-asian",
-    "american fusion": "american-fusion", "american-fusion": "american-fusion",
-    "american": "american-fusion",
-    "levantine": "levantine",
-    "european": "european",
-}
+_CUISINE_ALIASES = recipe_lib.CUISINE_ALIASES
+_SOURCE_ALIASES = recipe_lib.SOURCE_ALIASES
+_SOURCE_NAMES = recipe_lib.SOURCE_NAMES
 
 _TAG_ALIASES = {
     "vegetarian": "vegetarian", "veggie": "vegetarian",
@@ -608,8 +599,14 @@ _TAG_ALIASES = {
 def _parse_recipe_filters(spec: str) -> dict:
     spec = (spec or "").lower().strip()
     cuisine = None
+    source = None
     tags: list[str] = []
     max_minutes = None
+
+    for alias in sorted(_SOURCE_ALIASES, key=len, reverse=True):
+        if re.search(r"\b" + re.escape(alias) + r"\b", spec):
+            source = _SOURCE_ALIASES[alias]
+            break
 
     for alias in sorted(_CUISINE_ALIASES, key=len, reverse=True):
         if re.search(r"\b" + re.escape(alias) + r"\b", spec):
@@ -626,7 +623,13 @@ def _parse_recipe_filters(spec: str) -> dict:
     elif re.search(r"\b(quick|fast|speedy|easy)\b", spec):
         max_minutes = 30
 
-    return {"cuisine": cuisine, "tags": tags, "max_minutes": max_minutes, "spec": spec}
+    return {
+        "source": source,
+        "cuisine": cuisine,
+        "tags": tags,
+        "max_minutes": max_minutes,
+        "spec": spec,
+    }
 
 
 def _parse_recipe_request(low_text: str):
@@ -644,6 +647,7 @@ def _parse_recipe_request(low_text: str):
 def _recipe_suggestion_message(filters: dict) -> str:
     recipe_lib.ensure_catalog(max_age_days=RECIPE_CATALOG_MAX_AGE_DAYS)
 
+    source = filters.get("source")
     cuisine = filters.get("cuisine")
     tags = filters.get("tags") or []
     max_minutes = filters.get("max_minutes")
@@ -653,7 +657,8 @@ def _recipe_suggestion_message(filters: dict) -> str:
     )
 
     eligible = db.get_recipes(
-        cuisine=cuisine, tags=tags, max_minutes=max_minutes, eligible_since=cutoff
+        source=source, cuisine=cuisine, tags=tags,
+        max_minutes=max_minutes, eligible_since=cutoff,
     )
 
     picks: list[dict] = []
@@ -661,35 +666,40 @@ def _recipe_suggestion_message(filters: dict) -> str:
         picks = random.sample(eligible, RECIPE_SUGGEST_COUNT)
     else:
         picks = list(eligible)
-        chosen = {p["slug"] for p in picks}
+        chosen = {(p["source"], p["slug"]) for p in picks}
         fallback = db.get_recipes(
-            cuisine=cuisine, tags=tags, max_minutes=max_minutes, least_recent=True
+            source=source, cuisine=cuisine, tags=tags,
+            max_minutes=max_minutes, least_recent=True,
         )
         for r in fallback:
-            if r["slug"] in chosen:
+            key = (r["source"], r["slug"])
+            if key in chosen:
                 continue
             picks.append(r)
-            chosen.add(r["slug"])
+            chosen.add(key)
             if len(picks) >= RECIPE_SUGGEST_COUNT:
                 break
 
     if not picks:
         return (
             "No halal recipes matched that request. "
-            "Try a cuisine (e.g. `suggest indian`) or a tag (e.g. `suggest vegetarian`)."
+            "Try a cuisine (e.g. `suggest indian`), a tag (e.g. `suggest vegetarian`), "
+            "or a source (e.g. `suggest amira`)."
         )
 
-    db.mark_recipes_offered([p["slug"] for p in picks])
+    db.mark_recipes_offered([(p["source"], p["slug"]) for p in picks])
 
     filter_bits = []
+    if source:
+        filter_bits.append(_SOURCE_NAMES.get(source, source))
     if cuisine:
-        filter_bits.append(recipe_lib.CUISINE_NAMES.get(cuisine, cuisine))
+        filter_bits.append(cuisine.replace("-", " ").title())
     filter_bits.extend(tags)
     if max_minutes:
         filter_bits.append(f"≤{max_minutes} min")
     suffix = f" ({', '.join(filter_bits)})" if filter_bits else ""
 
-    lines = [f"🍽️ <b>Dinner ideas</b>{html_lib.escape(suffix)} — halal recipes"]
+    lines = [f"🍽️ <b>Dinner ideas</b>{_esc(suffix)} — halal recipes"]
     for i, r in enumerate(picks, 1):
         meta = []
         if r.get("minutes"):
@@ -700,13 +710,19 @@ def _recipe_suggestion_message(filters: dict) -> str:
             meta.append(f"{r['protein']}g protein")
         if r.get("difficulty"):
             meta.append(r["difficulty"])
+        source_name = _SOURCE_NAMES.get(r["source"], r["source"])
+        cuisine_display = r.get("cuisine") or ""
+        tag_line = f" — {_esc(cuisine_display)}" if cuisine_display else ""
         lines.append("")
-        lines.append(f"{i}. <b>{html_lib.escape(r['title'])}</b> — {html_lib.escape(r.get('cuisine') or '')}")
+        lines.append(f"{i}. <b>{_esc(r['title'])}</b>{tag_line}")
         if meta:
             lines.append("   " + " · ".join(meta))
-        if r.get("description"):
-            lines.append("   " + html_lib.escape(r["description"]))
-        lines.append(f'   <a href="{r["url"]}">View recipe</a>')
+        desc = (r.get("description") or "").strip()
+        if len(desc) > 200:
+            desc = desc[:197].rstrip() + "..."
+        if desc:
+            lines.append("   " + _esc(desc))
+        lines.append(f'   <a href="{r["url"]}">View recipe</a> · <i>{_esc(source_name)}</i>')
 
     lines.append("")
     lines.append(f"<i>Fresh picks — none of these repeat for {RECIPE_REPEAT_DAYS} days.</i>")
@@ -726,7 +742,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Schedules: `schedule dentist 12/07 3pm`, `appt 15/07 MOT`\n"
         "Meals: `menu monday burgers`, `eat friday pizza`\n"
         "Menu view: `menu`, `menu for the week`, `menu for monday and tuesday`\n"
-        "Recipe ideas: `suggest dinner`, `suggest indian`, `suggest vegetarian`, `suggest quick`\n\n"
+        "Recipe ideas: `suggest dinner`, `suggest indian`, `suggest vegetarian`, `suggest quick`, `suggest amira`\n\n"
         "_Every command must be the first word(s) of the message — the bot "
         "does not scan mid-sentence for these keywords._"
     )

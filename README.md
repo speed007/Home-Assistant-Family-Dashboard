@@ -223,17 +223,24 @@ Bulk Clear: Matches clear menu, clear meal plan, reset menu, delete menu.
 🥘 Recipe Ideas (Halal):
 
 ```
-Suggests random halal recipes scraped from halalmealplan.com. Each recipe is
-remembered and won't be offered again for RECIPE_REPEAT_DAYS (default 28).
+Suggests random halal recipes scraped from halalmealplan.com and Amira's Pantry.
+Each recipe is remembered and won't be offered again for RECIPE_REPEAT_DAYS
+(default 28). Suggestions mix both sites unless a source is given.
 
 Triggers: suggest, recommend, recipe, "dinner idea", "what should i cook",
           "give me a recipe", "surprise me" (e.g. suggest dinner).
 
+Sources:  suggest amira             -> only Amira's Pantry
+          suggest halal             -> only halalmealplan.com
+          suggest dinner            -> mixes both sites
+
 Filters:  suggest indian            -> by cuisine
-          suggest vegetarian        -> by tag (vegan, gluten-free, low-carb, dairy-free)
+          suggest vegetarian        -> by tag (vegan, gluten-free)
           suggest quick             -> 30 minutes or less
           suggest something under 45 min
           suggest indian vegetarian -> combines filters
+          suggest amira quick       -> source + filter
+```
 ```
 
 🛠️ 5. General Utility & Diagnostics
