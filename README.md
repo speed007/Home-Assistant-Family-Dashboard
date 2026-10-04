@@ -236,7 +236,6 @@ Filters:  suggest indian            -> by cuisine
           suggest something under 45 min
           suggest indian vegetarian -> combines filters
 ```
-```
 
 🛠️ 5. General Utility & Diagnostics
 ```
