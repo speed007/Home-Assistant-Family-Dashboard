@@ -241,9 +241,14 @@ _ALCOHOL_TERMS = [
     "champagne", "prosecco", "sherry", "liqueur", "vermouth", "marsala",
     "amaretto", "schnapps", "absinthe", "mezcal", "scotch", "guinness",
     "hard cider", "cooking wine", "rice wine", "white wine", "red wine",
-    "pinot", "chardonnay", "cabernet", "merlot", "rosé", "ipa",
-    "vanilla extract", "rum extract", "bourbon extract", "almond extract",
-    "liquor", "alcohol",
+    "pinot", "chardonnay", "cabernet", "merlot", "rosé", "ipa", "liquor",
+]
+
+# These are processed ingredients that may involve alcohol during manufacture
+# but do not contain it as an added ingredient, so they are allowed.
+_ALCOHOL_SCRUB = [
+    "wine vinegar", "vanilla extract", "almond extract", "rum extract",
+    "bourbon extract", "peppermint extract", "lemon extract",
 ]
 
 _PORK_RE = re.compile(r"\b(" + "|".join(re.escape(t) for t in _PORK_TERMS) + r")\b")
@@ -566,7 +571,11 @@ def _ingredients_safe(ingredients_lower: str) -> bool:
         return False  # no ingredient list -> can't verify, skip
     if _PORK_RE.search(ingredients_lower):
         return False
-    if _ALCOHOL_RE.search(ingredients_lower):
+    # Ignore processed ingredients that only used alcohol in manufacture.
+    scrubbed = ingredients_lower
+    for phrase in _ALCOHOL_SCRUB:
+        scrubbed = scrubbed.replace(phrase, " ")
+    if _ALCOHOL_RE.search(scrubbed):
         return False
     return True
 
