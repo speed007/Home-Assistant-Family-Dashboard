@@ -224,8 +224,8 @@ Bulk Clear: Matches clear menu, clear meal plan, reset menu, delete menu.
 
 ```
 Suggests random dinner recipes scraped from halalmealplan.com, Amira's Pantry,
-Gimme Delicious and Zabiha Halal. Only recipes free of pork and alcohol are
-included. Each recipe is remembered and won't be offered again for
+Gimme Delicious, Zabiha Halal and Halaal Recipes. Only recipes free of pork and
+alcohol are included. Each recipe is remembered and won't be offered again for
 RECIPE_REPEAT_DAYS (default 28). Suggestions mix all sites unless a source is
 given.
 
@@ -235,6 +235,7 @@ Triggers: suggest, recommend, recipe, "dinner idea", "what should i cook",
 Sources:  suggest amira             -> only Amira's Pantry
           suggest gimme             -> only Gimme Delicious
           suggest zabiha            -> only Zabiha Halal
+          suggest halaal            -> only Halaal Recipes
           suggest halal             -> only halalmealplan.com
           suggest dinner            -> mixes all sites
 

@@ -15,6 +15,7 @@ Sources
 import html
 import json
 import logging
+import os
 import re
 import threading
 import time
@@ -56,11 +57,18 @@ ZAB_API = "https://zabihahalal.com/wp-json/wp/v2/recipe"
 ZAB_CATEGORY_API = "https://zabihahalal.com/wp-json/wp/v2/recipe_categories"
 ZAB_MEAL_CATEGORY_SLUGS = ("dinner", "souper", "lunch", "diner", "kids", "enfants")
 
+# halaal.recipes is a large custom (non-WP) site with ~18k recipes. Only a
+# bounded slice of the newest recipes is fetched, since full metadata requires
+# one page request per recipe.
+HALAAL_LISTING = "https://halaal.recipes/recipes/all"
+HALAAL_MAX_PAGES = int(os.getenv("HALAAL_RECIPE_PAGES", "3"))
+
 SOURCE_NAMES = {
     "halalmealplan": "Halal Meal Plan",
     "amiraspantry": "Amira's Pantry",
     "gimmedelicious": "Gimme Delicious",
     "zabihahalal": "Zabiha Halal",
+    "halaalrecipes": "Halaal Recipes",
 }
 
 SOURCE_ALIASES = {
@@ -83,6 +91,10 @@ SOURCE_ALIASES = {
     "zabiha": "zabihahalal",
     "zabihahalal": "zabihahalal",
     "zabihahalal.com": "zabihahalal",
+    "halaal": "halaalrecipes",
+    "halaal recipes": "halaalrecipes",
+    "halaalrecipes": "halaalrecipes",
+    "halaal.recipes": "halaalrecipes",
 }
 
 # ----------------------------------------------------- Cuisine normalisation
@@ -244,11 +256,13 @@ _ALCOHOL_TERMS = [
     "pinot", "chardonnay", "cabernet", "merlot", "rosé", "ipa", "liquor",
 ]
 
-# These are processed ingredients that may involve alcohol during manufacture
-# but do not contain it as an added ingredient, so they are allowed.
+# These are processed/soft ingredients that may involve alcohol during
+# manufacture (or merely share a word) but do not contain alcohol as an added
+# ingredient, so they are allowed.
 _ALCOHOL_SCRUB = [
     "wine vinegar", "vanilla extract", "almond extract", "rum extract",
     "bourbon extract", "peppermint extract", "lemon extract",
+    "ginger ale", "ginger beer", "root beer", "barley malt",
 ]
 
 _PORK_RE = re.compile(r"\b(" + "|".join(re.escape(t) for t in _PORK_TERMS) + r")\b")
@@ -791,11 +805,99 @@ def fetch_zabihahalal() -> list[dict]:
     return recipes
 
 
+def _halaal_listing_links(max_pages: int) -> list[str]:
+    links: list[str] = []
+    session = requests.Session()
+    session.headers.update({"User-Agent": USER_AGENT})
+    try:
+        for page in range(1, max_pages + 1):
+            resp = session.get(HALAAL_LISTING, timeout=30, params={"page": page})
+            if resp.status_code != 200:
+                break
+            found = re.findall(
+                r'href="(https://halaal\.recipes/recipes/details/\d+/[a-z0-9-]+)"',
+                resp.text,
+            )
+            if not found:
+                break
+            links.extend(found)
+    finally:
+        session.close()
+    return list(dict.fromkeys(links))
+
+
+def _parse_halaal_page(html_text: str, link: str):
+    nodes = _jsonld_recipes(html_text)
+    rec = next((n for n in nodes if n.get("recipeIngredient")), None)
+    if rec is None and nodes:
+        rec = nodes[0]
+    if not rec:
+        return None
+
+    ingredients = rec.get("recipeIngredient") or []
+    if not _ingredients_safe(" ".join(str(x) for x in ingredients).lower()):
+        return None
+
+    total = _iso_duration_minutes(rec.get("totalTime"))
+    if total is None:
+        total = (_iso_duration_minutes(rec.get("prepTime")) or 0) + (
+            _iso_duration_minutes(rec.get("cookTime")) or 0
+        ) or None
+
+    cuisine = rec.get("recipeCuisine")
+    if isinstance(cuisine, list):
+        cuisine = cuisine[0] if cuisine else None
+    if cuisine and cuisine.strip().lower() in ("halaal", "halal"):
+        cuisine = None
+
+    slug = link.rstrip("/").split("/")[-1]
+    return {
+        "source": "halaalrecipes",
+        "slug": slug,
+        "title": _clean(rec.get("name")),
+        "cuisine": cuisine,
+        "cuisine_slug": _slugify(cuisine) if cuisine else None,
+        "url": link,
+        "tags": "",
+        "minutes": total,
+        "servings": _int(_num(rec.get("recipeYield"))),
+        "calories": None,
+        "protein": None,
+        "difficulty": None,
+        "description": _clean(rec.get("description")),
+    }
+
+
+def fetch_halaalrecipes() -> list[dict]:
+    recipes: list[dict] = []
+    links = _halaal_listing_links(HALAAL_MAX_PAGES)
+    logger.info("halaal.recipes: enriching %d newest recipes", len(links))
+
+    session = requests.Session()
+    session.headers.update({"User-Agent": USER_AGENT})
+    try:
+        for link in links:
+            try:
+                resp = session.get(link, timeout=30)
+                resp.raise_for_status()
+                parsed = _parse_halaal_page(resp.text, link)
+            except Exception:
+                logger.warning("halaal.recipes: could not read %s", link)
+                continue
+            if parsed and parsed["title"]:
+                recipes.append(parsed)
+    finally:
+        session.close()
+
+    return recipes
+
+
 SOURCES = {
     "halalmealplan": fetch_halalmealplan,
     "amiraspantry": fetch_amiraspantry,
     "gimmedelicious": fetch_gimmedelicious,
     "zabihahalal": fetch_zabihahalal,
+    "halaalrecipes": fetch_halaalrecipes,
 }
 
 
@@ -870,7 +972,11 @@ def ensure_catalog(max_age_days: int = 7, force: bool = False,
             return meta["count"]
         _last_attempt = time.time()
 
-    with _FETCH_LOCK:
+    # Non-blocking: if a refresh is already running, use the cached catalogue
+    # rather than making the caller wait (some sources can take minutes).
+    if not _FETCH_LOCK.acquire(blocking=False):
+        return db.get_recipe_meta()["count"]
+    try:
         meta, fresh = _catalog_state(max_age_days, sources)
         if fresh and not force:
             return meta["count"]
@@ -889,4 +995,6 @@ def ensure_catalog(max_age_days: int = 7, force: bool = False,
             logger.info("Recipe catalogue refreshed with %d recipes", len(items))
         else:
             logger.warning("Recipe catalogue fetch returned no recipes")
+    finally:
+        _FETCH_LOCK.release()
     return db.get_recipe_meta()["count"]
