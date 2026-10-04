@@ -224,15 +224,15 @@ CUISINE_CANON = {
     "tex-mex": "mexican",
 }
 
-# Best-effort screening: drop any recipe whose ingredient list mentions pork or
-# alcohol. Sources are halal-oriented but a few slips exist, so this screens
-# them out (it does not vouch for other non-halal ingredients).
+# Best-effort screening: drop any recipe whose ingredient list mentions actual
+# pork or alcohol. Generic processed-meat words (sausage, salami, pepperoni,
+# chorizo, pastrami, hot dog, ...) are NOT filtered, since these can be bought
+# halal from a local supplier. This only blocks definitively-pork ingredients.
 _PORK_TERMS = [
-    "pork", "bacon", "ham", "prosciutto", "pancetta", "chorizo", "lard",
-    "guanciale", "sausage", "pepperoni", "salami", "mortadella", "carnitas",
-    "speck", "bratwurst", "kielbasa", "hot dog", "hot dogs", "pastrami",
-    "andouille", "capicola", "coppa", "bresaola", "jamon", "jamón",
-    "pork belly", "pork shoulder", "pork loin", "ham hock", "bacon bits",
+    "pork", "bacon", "ham", "prosciutto", "pancetta", "lard", "guanciale",
+    "carnitas", "speck", "coppa", "capicola", "mortadella",
+    "pork belly", "pork shoulder", "pork loin", "pork chop", "ham hock",
+    "jamon", "jamón", "bacon bits",
 ]
 
 _ALCOHOL_TERMS = [
