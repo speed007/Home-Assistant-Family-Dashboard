@@ -41,8 +41,10 @@ HALALMEALPLAN_URL = "https://www.halalmealplan.com/recipes"
 HALALMEALPLAN_BASE = "https://www.halalmealplan.com"
 
 AMIRA_API = "https://amiraspantry.com/wp-json/wp/v2/wprm_recipe"
+AMIRA_COURSE_API = "https://amiraspantry.com/wp-json/wp/v2/wprm_course"
 AMIRA_HALAL_TERM = 8870  # wprm_suitablefordiet term id for "Halal"
 AMIRA_PER_PAGE = 100
+AMIRA_MEAL_COURSE_SLUGS = ("main-course", "dinner", "lunch", "soup")
 
 SOURCE_NAMES = {
     "halalmealplan": "Halal Meal Plan",
@@ -262,20 +264,42 @@ def fetch_halalmealplan() -> list[dict]:
 
 # ------------------------------------------------------------- amiraspantry
 
+def _amira_meal_course_ids() -> str:
+    """Resolve the REST ids for Amira's meal-type courses (for server filtering)."""
+    try:
+        resp = requests.get(
+            AMIRA_COURSE_API,
+            headers={"User-Agent": USER_AGENT},
+            timeout=20,
+            params={"per_page": 100, "_fields": "id,slug"},
+        )
+        resp.raise_for_status()
+        by_slug = {t.get("slug"): t.get("id") for t in resp.json() if isinstance(t, dict)}
+        return ",".join(str(by_slug[s]) for s in AMIRA_MEAL_COURSE_SLUGS if s in by_slug)
+    except Exception:
+        logger.warning("Could not resolve Amira meal course ids — fetching all halal recipes")
+        return ""
+
+
 def fetch_amiraspantry() -> list[dict]:
     recipes: list[dict] = []
+    course_param = _amira_meal_course_ids()
+    meal_courses = set(AMIRA_MEAL_COURSE_SLUGS)
     page = 1
     while True:
+        params = {
+            "per_page": AMIRA_PER_PAGE,
+            "page": page,
+            "wprm_suitablefordiet": AMIRA_HALAL_TERM,
+            "_fields": "slug,link,title,recipe",
+        }
+        if course_param:
+            params["wprm_course"] = course_param
         resp = requests.get(
             AMIRA_API,
             headers={"User-Agent": USER_AGENT},
             timeout=40,
-            params={
-                "per_page": AMIRA_PER_PAGE,
-                "page": page,
-                "wprm_suitablefordiet": AMIRA_HALAL_TERM,
-                "_fields": "slug,link,title,recipe",
-            },
+            params=params,
         )
         if resp.status_code == 400 and page > 1:
             break  # past the last page
@@ -292,6 +316,14 @@ def fetch_amiraspantry() -> list[dict]:
                 continue
 
             tags_obj = rec.get("tags") or {}
+
+            # Keep only meal-type courses so desserts/sauces/roundups are excluded.
+            course_slugs = {
+                t.get("slug") for t in (tags_obj.get("course") or [])
+            }
+            if not (course_slugs & meal_courses):
+                continue
+
             cuisine_terms = tags_obj.get("cuisine") or []
             cuisine_name = cuisine_terms[0].get("name") if cuisine_terms else None
             raw_cuisine = cuisine_terms[0].get("slug") if cuisine_terms else ""
@@ -340,9 +372,15 @@ SOURCES = {
 
 # ------------------------------------------------------------------ Catalog
 
-def fetch_catalog(sources: list[str] | None = None) -> list[dict]:
+def fetch_catalog(sources: list[str] | None = None):
+    """Fetch every requested source.
+
+    Returns (items, succeeded) where succeeded is a list of (source, keep_slugs)
+    for sources that returned at least one recipe.
+    """
     targets = sources or list(SOURCES)
     all_recipes: list[dict] = []
+    succeeded: list[tuple[str, set[str]]] = []
     for name in targets:
         fetcher = SOURCES.get(name)
         if not fetcher:
@@ -351,9 +389,11 @@ def fetch_catalog(sources: list[str] | None = None) -> list[dict]:
             items = fetcher()
             logger.info("Fetched %d recipes from %s", len(items), name)
             all_recipes.extend(items)
+            if items:
+                succeeded.append((name, {r["slug"] for r in items}))
         except Exception:
             logger.exception("Failed to fetch recipes from %s", name)
-    return all_recipes
+    return all_recipes, succeeded
 
 
 def _catalog_state(max_age_days: int, sources: list[str] | None):
@@ -406,13 +446,17 @@ def ensure_catalog(max_age_days: int = 7, force: bool = False,
         if fresh and not force:
             return meta["count"]
         try:
-            items = fetch_catalog(sources)
+            items, succeeded = fetch_catalog(sources)
         except Exception:
             logger.exception("Recipe catalogue fetch failed — using cached data")
             return db.get_recipe_meta()["count"]
 
         if items:
             db.save_recipes(items)
+            for name, keep in succeeded:
+                removed = db.prune_recipes(name, keep)
+                if removed:
+                    logger.info("Pruned %d stale recipes from %s", removed, name)
             logger.info("Recipe catalogue refreshed with %d recipes", len(items))
         else:
             logger.warning("Recipe catalogue fetch returned no recipes")

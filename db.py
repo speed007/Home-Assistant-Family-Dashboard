@@ -505,3 +505,21 @@ def mark_recipes_offered(keys: list[tuple[str, str]]):
                 (now, source, slug),
             )
         conn.commit()
+
+
+def prune_recipes(source: str, keep_slugs: set[str]) -> int:
+    """Delete catalogued recipes for a source that are no longer offered.
+
+    Called after a successful refresh so removed/renamed recipes don't linger.
+    """
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT slug FROM recipes WHERE source = ?", (source,)
+        ).fetchall()
+        stale = [r["slug"] for r in rows if r["slug"] not in keep_slugs]
+        for slug in stale:
+            conn.execute(
+                "DELETE FROM recipes WHERE source = ? AND slug = ?", (source, slug)
+            )
+        conn.commit()
+        return len(stale)
