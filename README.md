@@ -223,28 +223,18 @@ Bulk Clear: Matches clear menu, clear meal plan, reset menu, delete menu.
 🥘 Recipe Ideas:
 
 ```
-Suggests random dinner recipes scraped from halalmealplan.com, Amira's Pantry,
-Gimme Delicious, Zabiha Halal and Halaal Recipes. Only recipes free of pork and
-alcohol are included. Each recipe is remembered and won't be offered again for
-RECIPE_REPEAT_DAYS (default 28). Suggestions mix all sites unless a source is
-given.
+Suggests random dinner ideas pooled from several halal recipe sites. Only
+recipes free of pork and alcohol are included. Each recipe is remembered and
+won't be offered again for RECIPE_REPEAT_DAYS (default 28).
 
 Triggers: suggest, recommend, recipe, "dinner idea", "what should i cook",
           "give me a recipe", "surprise me" (e.g. suggest dinner).
-
-Sources:  suggest amira             -> only Amira's Pantry
-          suggest gimme             -> only Gimme Delicious
-          suggest zabiha            -> only Zabiha Halal
-          suggest halaal            -> only Halaal Recipes
-          suggest halal             -> only halalmealplan.com
-          suggest dinner            -> mixes all sites
 
 Filters:  suggest indian            -> by cuisine
           suggest vegetarian        -> by tag (vegan, gluten-free)
           suggest quick             -> 30 minutes or less
           suggest something under 45 min
           suggest indian vegetarian -> combines filters
-          suggest amira quick       -> source + filter
 ```
 ```
 

@@ -584,8 +584,6 @@ _SUGGEST_TRIGGERS = sorted([
 ], key=len, reverse=True)
 
 _CUISINE_ALIASES = recipe_lib.CUISINE_ALIASES
-_SOURCE_ALIASES = recipe_lib.SOURCE_ALIASES
-_SOURCE_NAMES = recipe_lib.SOURCE_NAMES
 
 _TAG_ALIASES = {
     "vegetarian": "vegetarian", "veggie": "vegetarian",
@@ -599,14 +597,8 @@ _TAG_ALIASES = {
 def _parse_recipe_filters(spec: str) -> dict:
     spec = (spec or "").lower().strip()
     cuisine = None
-    source = None
     tags: list[str] = []
     max_minutes = None
-
-    for alias in sorted(_SOURCE_ALIASES, key=len, reverse=True):
-        if re.search(r"\b" + re.escape(alias) + r"\b", spec):
-            source = _SOURCE_ALIASES[alias]
-            break
 
     for alias in sorted(_CUISINE_ALIASES, key=len, reverse=True):
         if re.search(r"\b" + re.escape(alias) + r"\b", spec):
@@ -624,7 +616,6 @@ def _parse_recipe_filters(spec: str) -> dict:
         max_minutes = 30
 
     return {
-        "source": source,
         "cuisine": cuisine,
         "tags": tags,
         "max_minutes": max_minutes,
@@ -647,7 +638,6 @@ def _parse_recipe_request(low_text: str):
 def _recipe_suggestion_message(filters: dict) -> str:
     recipe_lib.ensure_catalog(max_age_days=RECIPE_CATALOG_MAX_AGE_DAYS)
 
-    source = filters.get("source")
     cuisine = filters.get("cuisine")
     tags = filters.get("tags") or []
     max_minutes = filters.get("max_minutes")
@@ -657,7 +647,7 @@ def _recipe_suggestion_message(filters: dict) -> str:
     )
 
     eligible = db.get_recipes(
-        source=source, cuisine=cuisine, tags=tags,
+        cuisine=cuisine, tags=tags,
         max_minutes=max_minutes, eligible_since=cutoff,
     )
 
@@ -668,7 +658,7 @@ def _recipe_suggestion_message(filters: dict) -> str:
         picks = list(eligible)
         chosen = {(p["source"], p["slug"]) for p in picks}
         fallback = db.get_recipes(
-            source=source, cuisine=cuisine, tags=tags,
+            cuisine=cuisine, tags=tags,
             max_minutes=max_minutes, least_recent=True,
         )
         for r in fallback:
@@ -684,14 +674,12 @@ def _recipe_suggestion_message(filters: dict) -> str:
         return (
             "No recipes matched that request. "
             "Try a cuisine (e.g. `suggest indian`), a tag (e.g. `suggest vegetarian`), "
-            "or a source (e.g. `suggest amira`)."
+            "or `suggest quick` for something fast."
         )
 
     db.mark_recipes_offered([(p["source"], p["slug"]) for p in picks])
 
     filter_bits = []
-    if source:
-        filter_bits.append(_SOURCE_NAMES.get(source, source))
     if cuisine:
         filter_bits.append(cuisine.replace("-", " ").title())
     filter_bits.extend(tags)
@@ -710,7 +698,6 @@ def _recipe_suggestion_message(filters: dict) -> str:
             meta.append(f"{r['protein']}g protein")
         if r.get("difficulty"):
             meta.append(r["difficulty"])
-        source_name = _SOURCE_NAMES.get(r["source"], r["source"])
         cuisine_display = r.get("cuisine") or ""
         tag_line = f" — {_esc(cuisine_display)}" if cuisine_display else ""
         lines.append("")
@@ -722,7 +709,7 @@ def _recipe_suggestion_message(filters: dict) -> str:
             desc = desc[:197].rstrip() + "..."
         if desc:
             lines.append("   " + _esc(desc))
-        lines.append(f'   <a href="{r["url"]}">View recipe</a> · <i>{_esc(source_name)}</i>')
+        lines.append(f'   <a href="{r["url"]}">View recipe</a>')
 
     lines.append("")
     lines.append(f"<i>Fresh picks — none of these repeat for {RECIPE_REPEAT_DAYS} days.</i>")
@@ -742,7 +729,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Schedules: `schedule dentist 12/07 3pm`, `appt 15/07 MOT`\n"
         "Meals: `menu monday burgers`, `eat friday pizza`\n"
         "Menu view: `menu`, `menu for the week`, `menu for monday and tuesday`\n"
-        "Recipe ideas: `suggest dinner`, `suggest indian`, `suggest vegetarian`, `suggest quick`, `suggest amira`\n\n"
+        "Recipe ideas: `suggest dinner`, `suggest indian`, `suggest vegetarian`, `suggest quick`\n\n"
         "_Every command must be the first word(s) of the message — the bot "
         "does not scan mid-sentence for these keywords._"
     )
