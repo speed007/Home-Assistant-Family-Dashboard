@@ -54,6 +54,24 @@ def init_db():
                 pinned INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS recipes (
+                slug TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                cuisine TEXT,
+                url TEXT NOT NULL,
+                tags TEXT,
+                minutes INTEGER,
+                servings INTEGER,
+                calories INTEGER,
+                protein INTEGER,
+                difficulty TEXT,
+                description TEXT,
+                fetched_at TEXT NOT NULL,
+                last_offered_at TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_recipes_last_offered
+                ON recipes(last_offered_at);
             """
         )
         conn.commit()
@@ -329,4 +347,88 @@ def clear_bot_messages():
 def clear_appointments():
     with _connect() as conn:
         conn.execute("DELETE FROM appointments")
+        conn.commit()
+
+
+# ------------------------------------------------------------------ Recipes
+
+def save_recipes(recipes: list[dict]):
+    now = _now()
+    with _connect() as conn:
+        for r in recipes:
+            conn.execute(
+                """
+                INSERT INTO recipes (slug, title, cuisine, url, tags, minutes,
+                                     servings, calories, protein, difficulty,
+                                     description, fetched_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(slug) DO UPDATE SET
+                    title = excluded.title,
+                    cuisine = excluded.cuisine,
+                    url = excluded.url,
+                    tags = excluded.tags,
+                    minutes = excluded.minutes,
+                    servings = excluded.servings,
+                    calories = excluded.calories,
+                    protein = excluded.protein,
+                    difficulty = excluded.difficulty,
+                    description = excluded.description,
+                    fetched_at = excluded.fetched_at
+                """,
+                (
+                    r["slug"], r["title"], r.get("cuisine"), r["url"],
+                    r.get("tags", ""), r.get("minutes"), r.get("servings"),
+                    r.get("calories"), r.get("protein"), r.get("difficulty"),
+                    r.get("description"), now,
+                ),
+            )
+        conn.commit()
+
+
+def get_recipe_meta() -> dict:
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS n, MAX(fetched_at) AS fetched FROM recipes"
+        ).fetchone()
+        return {"count": row["n"], "fetched_at": row["fetched"]}
+
+
+def get_recipes(cuisine: str | None = None, tags: list[str] | None = None,
+                max_minutes: int | None = None, eligible_since: str | None = None,
+                least_recent: bool = False, limit: int | None = None) -> list[dict]:
+    clauses, params = [], []
+    if cuisine:
+        clauses.append("LOWER(cuisine) = ?")
+        params.append(cuisine.lower())
+    for tag in (tags or []):
+        clauses.append("(',' || LOWER(tags) || ',') LIKE ?")
+        params.append(f"%,{tag.lower()},%")
+    if max_minutes:
+        clauses.append("minutes IS NOT NULL AND minutes <= ?")
+        params.append(max_minutes)
+    if eligible_since is not None:
+        clauses.append("(last_offered_at IS NULL OR last_offered_at < ?)")
+        params.append(eligible_since)
+
+    sql = "SELECT * FROM recipes"
+    if clauses:
+        sql += " WHERE " + " AND ".join(clauses)
+    if least_recent:
+        sql += " ORDER BY (last_offered_at IS NOT NULL), last_offered_at ASC"
+    if limit:
+        sql += f" LIMIT {int(limit)}"
+
+    with _connect() as conn:
+        rows = conn.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+
+
+def mark_recipes_offered(slugs: list[str]):
+    now = _now()
+    with _connect() as conn:
+        for slug in slugs:
+            conn.execute(
+                "UPDATE recipes SET last_offered_at = ? WHERE slug = ?",
+                (now, slug),
+            )
         conn.commit()

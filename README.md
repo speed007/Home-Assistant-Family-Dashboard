@@ -215,7 +215,25 @@ Bulk Clear: Matches clear notes, clear sticky, delete notes.
 ```
 Day Overrides: Matches meal, dinner, food, menu, eat followed by today, tomorrow, monday, mon, tuesday, tue, wednesday, wed, thursday, thu, friday, fri, saturday, sat, sunday, sun (e.g. menu monday burgers or eat fri pasta).
 
+Menu View: `menu` (today + tomorrow), `menu for the week` (full week), `menu for monday`, `menu for monday and tuesday`.
+
 Bulk Clear: Matches clear menu, clear meal plan, reset menu, delete menu.
+```
+
+🥘 Recipe Ideas (Halal):
+
+```
+Suggests random halal recipes scraped from halalmealplan.com. Each recipe is
+remembered and won't be offered again for RECIPE_REPEAT_DAYS (default 28).
+
+Triggers: suggest, recommend, recipe, "dinner idea", "what should i cook",
+          "give me a recipe", "surprise me" (e.g. suggest dinner).
+
+Filters:  suggest indian            -> by cuisine
+          suggest vegetarian        -> by tag (vegan, gluten-free, low-carb, dairy-free)
+          suggest quick             -> 30 minutes or less
+          suggest something under 45 min
+          suggest indian vegetarian -> combines filters
 ```
 
 🛠️ 5. General Utility & Diagnostics

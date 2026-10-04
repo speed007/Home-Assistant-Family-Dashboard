@@ -3,6 +3,8 @@ import os
 import sys
 import logging
 import json
+import html as html_lib
+import random
 import requests
 import re
 import signal
@@ -14,6 +16,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 import db
+import recipes as recipe_lib
 
 load_dotenv()
 
@@ -555,6 +558,162 @@ def _menu_view_message(low_text, overrides, weekly, now_dt):
     return title + "\n\n" + "\n\n".join(blocks)
 
 
+# ---------- Recipe suggestion helpers ----------
+
+RECIPE_SUGGEST_COUNT = int(os.getenv("RECIPE_SUGGEST_COUNT", "3"))
+RECIPE_REPEAT_DAYS = int(os.getenv("RECIPE_REPEAT_DAYS", "28"))
+RECIPE_CATALOG_MAX_AGE_DAYS = int(os.getenv("RECIPE_CATALOG_MAX_AGE_DAYS", "7"))
+
+_SUGGEST_TRIGGERS = sorted([
+    "what should i cook for dinner", "what should i make for dinner",
+    "what should we cook for dinner", "what should we make for dinner",
+    "what should i cook", "what should i make",
+    "what should we cook", "what should we make",
+    "give me a recipe", "give me some recipes", "give me recipe",
+    "suggest something to cook", "suggest something to make",
+    "suggest a recipe", "suggest some recipes", "suggest recipes",
+    "something to cook", "something to make", "something for dinner",
+    "dinner suggestion", "meal suggestion", "cook suggestion",
+    "dinner idea", "cook idea", "meal idea", "food idea", "recipe idea",
+    "surprise me", "recommend", "suggest", "recipes", "recipe",
+], key=len, reverse=True)
+
+_CUISINE_ALIASES = {
+    "indian": "indian",
+    "middle eastern": "middle-eastern", "middle-eastern": "middle-eastern",
+    "middle east": "middle-eastern", "arabic": "middle-eastern",
+    "mediterranean": "mediterranean",
+    "pakistani": "pakistani",
+    "turkish": "turkish",
+    "malaysian": "malaysian",
+    "african": "african",
+    "korean": "korean",
+    "caribbean": "caribbean",
+    "central asian": "central-asian", "central-asian": "central-asian",
+    "american fusion": "american-fusion", "american-fusion": "american-fusion",
+    "american": "american-fusion",
+    "levantine": "levantine",
+    "european": "european",
+}
+
+_TAG_ALIASES = {
+    "vegetarian": "vegetarian", "veggie": "vegetarian",
+    "vegan": "vegan",
+    "gluten free": "gluten-free", "gluten-free": "gluten-free",
+    "low carb": "low-carb", "low-carb": "low-carb",
+    "dairy free": "dairy-free", "dairy-free": "dairy-free",
+}
+
+
+def _parse_recipe_filters(spec: str) -> dict:
+    spec = (spec or "").lower().strip()
+    cuisine = None
+    tags: list[str] = []
+    max_minutes = None
+
+    for alias in sorted(_CUISINE_ALIASES, key=len, reverse=True):
+        if re.search(r"\b" + re.escape(alias) + r"\b", spec):
+            cuisine = _CUISINE_ALIASES[alias]
+            break
+
+    for alias, slug in _TAG_ALIASES.items():
+        if re.search(r"\b" + re.escape(alias) + r"\b", spec) and slug not in tags:
+            tags.append(slug)
+
+    m = re.search(r"(?:under|less than|within|below|max|<)\s*(\d+)\s*(?:min|mins|minutes)?", spec)
+    if m:
+        max_minutes = int(m.group(1))
+    elif re.search(r"\b(quick|fast|speedy|easy)\b", spec):
+        max_minutes = 30
+
+    return {"cuisine": cuisine, "tags": tags, "max_minutes": max_minutes, "spec": spec}
+
+
+def _parse_recipe_request(low_text: str):
+    """Return filter dict when the text is a recipe-suggestion request, else None."""
+    text = low_text.strip().strip("?!. ").strip()
+    for trig in _SUGGEST_TRIGGERS:
+        if text == trig:
+            return _parse_recipe_filters("")
+        if text.startswith(trig) and text[len(trig):len(trig) + 1] in (" ", ",", ":", "-"):
+            spec = text[len(trig):].strip(" ,:.-")
+            return _parse_recipe_filters(spec)
+    return None
+
+
+def _recipe_suggestion_message(filters: dict) -> str:
+    recipe_lib.ensure_catalog(max_age_days=RECIPE_CATALOG_MAX_AGE_DAYS)
+
+    cuisine = filters.get("cuisine")
+    tags = filters.get("tags") or []
+    max_minutes = filters.get("max_minutes")
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=RECIPE_REPEAT_DAYS)).isoformat(
+        timespec="seconds"
+    )
+
+    eligible = db.get_recipes(
+        cuisine=cuisine, tags=tags, max_minutes=max_minutes, eligible_since=cutoff
+    )
+
+    picks: list[dict] = []
+    if len(eligible) >= RECIPE_SUGGEST_COUNT:
+        picks = random.sample(eligible, RECIPE_SUGGEST_COUNT)
+    else:
+        picks = list(eligible)
+        chosen = {p["slug"] for p in picks}
+        fallback = db.get_recipes(
+            cuisine=cuisine, tags=tags, max_minutes=max_minutes, least_recent=True
+        )
+        for r in fallback:
+            if r["slug"] in chosen:
+                continue
+            picks.append(r)
+            chosen.add(r["slug"])
+            if len(picks) >= RECIPE_SUGGEST_COUNT:
+                break
+
+    if not picks:
+        return (
+            "No halal recipes matched that request. "
+            "Try a cuisine (e.g. `suggest indian`) or a tag (e.g. `suggest vegetarian`)."
+        )
+
+    db.mark_recipes_offered([p["slug"] for p in picks])
+
+    filter_bits = []
+    if cuisine:
+        filter_bits.append(recipe_lib.CUISINE_NAMES.get(cuisine, cuisine))
+    filter_bits.extend(tags)
+    if max_minutes:
+        filter_bits.append(f"≤{max_minutes} min")
+    suffix = f" ({', '.join(filter_bits)})" if filter_bits else ""
+
+    lines = [f"🍽️ <b>Dinner ideas</b>{html_lib.escape(suffix)} — halal recipes"]
+    for i, r in enumerate(picks, 1):
+        meta = []
+        if r.get("minutes"):
+            meta.append(f"{r['minutes']} min")
+        if r.get("calories"):
+            meta.append(f"{r['calories']} cal")
+        if r.get("protein"):
+            meta.append(f"{r['protein']}g protein")
+        if r.get("difficulty"):
+            meta.append(r["difficulty"])
+        lines.append("")
+        lines.append(f"{i}. <b>{html_lib.escape(r['title'])}</b> — {html_lib.escape(r.get('cuisine') or '')}")
+        if meta:
+            lines.append("   " + " · ".join(meta))
+        if r.get("description"):
+            lines.append("   " + html_lib.escape(r["description"]))
+        lines.append(f'   <a href="{r["url"]}">View recipe</a>')
+
+    lines.append("")
+    lines.append(f"<i>Fresh picks — none of these repeat for {RECIPE_REPEAT_DAYS} days.</i>")
+    lines.append("Reply <code>menu today &lt;name&gt;</code> to set one as today's meal.")
+    return "\n".join(lines)
+
+
 # ---------- Telegram handlers ----------
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -566,7 +725,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Notes: `note lock back door`, `memo fix tap`, `sticky grab keys`\n"
         "Schedules: `schedule dentist 12/07 3pm`, `appt 15/07 MOT`\n"
         "Meals: `menu monday burgers`, `eat friday pizza`\n"
-        "Menu view: `menu`, `menu for the week`, `menu for monday and tuesday`\n\n"
+        "Menu view: `menu`, `menu for the week`, `menu for monday and tuesday`\n"
+        "Recipe ideas: `suggest dinner`, `suggest indian`, `suggest vegetarian`, `suggest quick`\n\n"
         "_Every command must be the first word(s) of the message — the bot "
         "does not scan mid-sentence for these keywords._"
     )
@@ -679,6 +839,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         menu_view = _menu_view_message(low_text, db.get_meals(), WEEKLY_MEAL_PLAN, datetime.now())
         if menu_view is not None:
             await _reply(update, menu_view, parse_mode="Markdown")
+            return
+
+        recipe_filters = _parse_recipe_request(low_text)
+        if recipe_filters is not None:
+            suggestion = await asyncio.to_thread(_recipe_suggestion_message, recipe_filters)
+            await _reply(update, suggestion, parse_mode="HTML")
             return
 
         note_match = re.match(r"^(?:note|sticky|remind|remember|memo|jot|write|save|pin)\b[,\s]+(.+)", raw_text, re.IGNORECASE)
@@ -869,6 +1035,14 @@ def main():
     publish_meals()
     publish_notes()
     publish_appointments()
+
+    # Pre-warm the halal recipe catalogue in the background so the first
+    # "suggest dinner" request is instant and startup isn't blocked.
+    threading.Thread(
+        target=recipe_lib.ensure_catalog,
+        kwargs={"max_age_days": RECIPE_CATALOG_MAX_AGE_DAYS},
+        daemon=True,
+    ).start()
 
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start_command))
