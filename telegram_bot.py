@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone, time
 from dotenv import load_dotenv
 import paho.mqtt.client as mqtt
 from telegram import Update
+from telegram.error import TelegramError, TimedOut, NetworkError, RetryAfter
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 import db
@@ -143,12 +144,32 @@ def _now():
 
 
 async def _reply(update: Update, text: str, parse_mode: str | None = None) -> object | None:
-    msg = await update.message.reply_text(text, parse_mode=parse_mode)
-    try:
-        db.add_bot_message(msg.message_id, msg.chat.id)
-    except Exception:
-        pass
-    return msg
+    """Send a reply, retrying transient network failures.
+
+    Returns the sent message, or None if Telegram could not be reached after
+    retries. Never raises, so a failed confirmation doesn't abort an action
+    that already succeeded.
+    """
+    last_exc: Exception | None = None
+    for attempt in range(3):
+        try:
+            msg = await update.message.reply_text(text, parse_mode=parse_mode)
+            try:
+                db.add_bot_message(msg.message_id, msg.chat.id)
+            except Exception:
+                pass
+            return msg
+        except RetryAfter as e:
+            await asyncio.sleep(float(e.retry_after) + 1)
+            last_exc = e
+        except (TimedOut, NetworkError) as e:
+            last_exc = e
+            await asyncio.sleep(1.5 * (attempt + 1))
+        except TelegramError as e:
+            logger.error(f"Telegram reply rejected: {e}")
+            return None
+    logger.error(f"Telegram reply failed after retries: {last_exc}")
+    return None
 
 
 def _signal_handler(sig, frame):
@@ -1073,7 +1094,15 @@ def main():
         daemon=True,
     ).start()
 
-    app = Application.builder().token(TELEGRAM_TOKEN).build()
+    app = (
+        Application.builder()
+        .token(TELEGRAM_TOKEN)
+        .connect_timeout(10)
+        .read_timeout(10)
+        .write_timeout(10)
+        .pool_timeout(5)
+        .build()
+    )
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.StatusUpdate.PINNED_MESSAGE, track_pinned_message))
