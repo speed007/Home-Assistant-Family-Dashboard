@@ -220,12 +220,13 @@ Menu View: `menu` (today + tomorrow), `menu for the week` (full week), `menu for
 Bulk Clear: Matches clear menu, clear meal plan, reset menu, delete menu.
 ```
 
-🥘 Recipe Ideas (Halal):
+🥘 Recipe Ideas:
 
 ```
-Suggests random halal recipes scraped from halalmealplan.com and Amira's Pantry.
-Each recipe is remembered and won't be offered again for RECIPE_REPEAT_DAYS
-(default 28). Suggestions mix both sites unless a source is given.
+Suggests random dinner recipes scraped from halalmealplan.com and Amira's Pantry.
+Only recipes free of pork and alcohol are included. Each recipe is remembered
+and won't be offered again for RECIPE_REPEAT_DAYS (default 28). Suggestions mix
+both sites unless a source is given.
 
 Triggers: suggest, recommend, recipe, "dinner idea", "what should i cook",
           "give me a recipe", "surprise me" (e.g. suggest dinner).

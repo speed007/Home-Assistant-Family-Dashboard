@@ -682,7 +682,7 @@ def _recipe_suggestion_message(filters: dict) -> str:
 
     if not picks:
         return (
-            "No halal recipes matched that request. "
+            "No recipes matched that request. "
             "Try a cuisine (e.g. `suggest indian`), a tag (e.g. `suggest vegetarian`), "
             "or a source (e.g. `suggest amira`)."
         )
@@ -699,7 +699,7 @@ def _recipe_suggestion_message(filters: dict) -> str:
         filter_bits.append(f"≤{max_minutes} min")
     suffix = f" ({', '.join(filter_bits)})" if filter_bits else ""
 
-    lines = [f"🍽️ <b>Dinner ideas</b>{_esc(suffix)} — halal recipes"]
+    lines = [f"🍽️ <b>Dinner ideas</b>{_esc(suffix)}"]
     for i, r in enumerate(picks, 1):
         meta = []
         if r.get("minutes"):
