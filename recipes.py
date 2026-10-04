@@ -826,12 +826,23 @@ def _halaal_listing_links(max_pages: int) -> list[str]:
     return list(dict.fromkeys(links))
 
 
+_HALAAL_SKIP_RE = re.compile(
+    r"\b(cakes?|desserts?|sweets|biscuits?|baking|cookies?|puddings?|"
+    r"ice cream|drinks?|beverages?|smoothies?|milkshakes?|jams?|preserves?|"
+    r"chocolate|candy|fudge)\b"
+)
+
+
 def _parse_halaal_page(html_text: str, link: str):
     nodes = _jsonld_recipes(html_text)
     rec = next((n for n in nodes if n.get("recipeIngredient")), None)
     if rec is None and nodes:
         rec = nodes[0]
     if not rec:
+        return None
+
+    category = _clean(rec.get("recipeCategory")) or ""
+    if _HALAAL_SKIP_RE.search(category.lower()):
         return None
 
     ingredients = rec.get("recipeIngredient") or []
@@ -864,7 +875,7 @@ def _parse_halaal_page(html_text: str, link: str):
         "calories": None,
         "protein": None,
         "difficulty": None,
-        "description": _clean(rec.get("description")),
+        "description": "",
     }
 
 
