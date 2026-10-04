@@ -213,7 +213,7 @@ Bulk Clear: Matches clear notes, clear sticky, delete notes.
 🍽️ Ad-Hoc Meal & Food Planning:
 
 ```
-Day Overrides: Matches meal, dinner, food, menu, eat followed by today, tomorrow, monday, mon, tuesday, tue, wednesday, wed, thursday, thu, friday, fri, saturday, sat, sunday, sun (e.g. menu monday burgers or eat fri pasta).
+Day Overrides: Matches meal, dinner, food, menu, eat followed by today, tomorrow, monday, mon, tuesday, tue, wednesday, wed, thursday, thu, friday, fri, saturday, sat, sunday, sun (e.g. menu monday burgers or eat fri pasta). Natural phrasing also works: `add lamb curry to wednesday menu`, `put curry on friday`, `set monday to pasta`.
 
 Menu View: `menu` (today + tomorrow), `menu for the week` (full week), `menu for monday`, `menu for monday and tuesday`.
 

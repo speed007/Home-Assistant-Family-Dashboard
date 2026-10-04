@@ -727,7 +727,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Shopping: `need milk`, `buy apples`, `add to grocery eggs`\n"
         "Notes: `note lock back door`, `memo fix tap`, `sticky grab keys`\n"
         "Schedules: `schedule dentist 12/07 3pm`, `appt 15/07 MOT`\n"
-        "Meals: `menu monday burgers`, `eat friday pizza`\n"
+        "Meals: `menu monday burgers`, `eat friday pizza`, `add lamb curry to wednesday menu`\n"
         "Menu view: `menu`, `menu for the week`, `menu for monday and tuesday`\n"
         "Recipe ideas: `suggest dinner`, `suggest indian`, `suggest vegetarian`, `suggest quick`\n\n"
         "_Every command must be the first word(s) of the message — the bot "
@@ -855,6 +855,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         put_on_list_match = re.match(r"^put\b[,\s]+(.+)\s+on\s+(?:the\s+)?list", raw_text, re.IGNORECASE)
         remove_match = re.match(r"^(?:remove|delete|cancel|drop|bought|erase|scrub|toss|dump|clear|forget|uncheck)\b[,\s]+(.+)", raw_text, re.IGNORECASE)
         meal_match = re.match(r"^(?:meal|dinner|food|menu|eat)\s+(today|tomorrow|monday|mon|tuesday|tue|wednesday|wed|thursday|thu|friday|fri|saturday|sat|sunday|sun)\b[,\s]+(.+)", raw_text, re.IGNORECASE)
+        # Natural phrasing: "add lamb curry to Wednesday menu", "set wednesday to X",
+        # "put curry on friday", "make monday pasta".
+        _day = r"(today|tomorrow|monday|mon|tuesday|tue|wednesday|wed|thursday|thu|friday|fri|saturday|sat|sunday|sun)"
+        meal_set_natural = re.match(
+            rf"^(?:add|put|set|change|make)\s+(.+?)\s+(?:to|for|on|as)\s+(?:the\s+|my\s+)?{_day}(?:'s)?(?:\s+(?:menu|dinner|lunch|supper|meal|plan))?\s*$",
+            raw_text, re.IGNORECASE,
+        )
+        meal_set_day_first = re.match(
+            rf"^(?:set|change|make)\s+(?:the\s+)?{_day}(?:'s)?\s*(?:menu|dinner|lunch|supper|meal|plan)?\s*(?:to\s+|as\s+)?(.+)$",
+            raw_text, re.IGNORECASE,
+        )
         appt_match = re.match(r"^(?:(?:add(?:ed)?|new|set|create|make)\s+)?(?:appointment|appt|book(?:ing)?|schedule|event|calendar|plan|reminder|meeting)\b[,\s]+(.+)", raw_text, re.IGNORECASE)
 
         if note_match:
@@ -871,6 +882,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             day_map = {"mon": "monday", "tue": "tuesday", "wed": "wednesday", "thu": "thursday", "fri": "friday", "sat": "saturday", "sun": "sunday"}
             if day_target in day_map:
                 day_target = day_map[day_target]
+
+            db.set_meal(day_target, meal_content)
+            await _reply(update,f"Meal updated for {day_target.capitalize()}: \"{meal_content}\"")
+            publish_meals()
+            return
+
+        elif meal_set_natural or meal_set_day_first:
+            if meal_set_natural:
+                meal_content = meal_set_natural.group(1).strip()
+                day_target = meal_set_natural.group(2).lower()
+            else:
+                day_target = meal_set_day_first.group(1).lower()
+                meal_content = meal_set_day_first.group(2).strip()
+            day_map = {"mon": "monday", "tue": "tuesday", "wed": "wednesday", "thu": "thursday", "fri": "friday", "sat": "saturday", "sun": "sunday"}
+            day_target = day_map.get(day_target, day_target)
 
             db.set_meal(day_target, meal_content)
             await _reply(update,f"Meal updated for {day_target.capitalize()}: \"{meal_content}\"")
