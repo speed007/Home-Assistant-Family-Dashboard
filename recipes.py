@@ -46,9 +46,15 @@ AMIRA_HALAL_TERM = 8870  # wprm_suitablefordiet term id for "Halal"
 AMIRA_PER_PAGE = 100
 AMIRA_MEAL_COURSE_SLUGS = ("main-course", "dinner", "lunch", "soup")
 
+GD_API = "https://gimmedelicious.com/wp-json/wp/v2/wprm_recipe"
+GD_COURSE_API = "https://gimmedelicious.com/wp-json/wp/v2/wprm_course"
+GD_PER_PAGE = 100
+GD_MEAL_COURSE_SLUGS = ("dinner", "main", "main-course", "lunch", "lunch-or-side")
+
 SOURCE_NAMES = {
     "halalmealplan": "Halal Meal Plan",
     "amiraspantry": "Amira's Pantry",
+    "gimmedelicious": "Gimme Delicious",
 }
 
 SOURCE_ALIASES = {
@@ -64,6 +70,10 @@ SOURCE_ALIASES = {
     "amiras pantry": "amiraspantry",
     "amira pantry": "amiraspantry",
     "amiraspantry.com": "amiraspantry",
+    "gimme": "gimmedelicious",
+    "gimme delicious": "gimmedelicious",
+    "gimmedelicious": "gimmedelicious",
+    "gimmedelicious.com": "gimmedelicious",
 }
 
 # ----------------------------------------------------- Cuisine normalisation
@@ -175,6 +185,61 @@ _DIET_TAG_MAP = {
     "glutenfreediet": "gluten-free",
 }
 
+# Amira / Gimme Delicious cuisines -> canonical slug space.
+CUISINE_CANON = {
+    "american": "american-fusion",
+    "mexican": "mexican",
+    "italian": "italian",
+    "asian": "asian",
+    "middle eastern": "middle-eastern",
+    "mediterranean": "mediterranean",
+    "indian": "indian",
+    "japanese": "japanese",
+    "thai": "thai",
+    "vietnamese": "asian",
+    "chinese": "chinese",
+    "korean": "korean",
+    "ethiopian": "african",
+    "moroccan": "moroccan",
+    "french": "french",
+    "greek": "greek",
+    "spanish": "spanish",
+    "turkish": "turkish",
+    "lebanese": "middle-eastern",
+    "persian": "middle-eastern",
+    "israeli": "middle-eastern",
+    "syrian": "middle-eastern",
+    "caribbean": "caribbean",
+    "southern": "american-fusion",
+    "cajun": "american-fusion",
+    "tex-mex": "mexican",
+}
+
+# Best-effort screening: drop any recipe whose ingredient list mentions pork or
+# alcohol. Sources are halal-oriented but a few slips exist, so this screens
+# them out (it does not vouch for other non-halal ingredients).
+_PORK_TERMS = [
+    "pork", "bacon", "ham", "prosciutto", "pancetta", "chorizo", "lard",
+    "guanciale", "sausage", "pepperoni", "salami", "mortadella", "carnitas",
+    "speck", "bratwurst", "kielbasa", "hot dog", "hot dogs", "pastrami",
+    "andouille", "capicola", "coppa", "bresaola", "jamon", "jamón",
+    "pork belly", "pork shoulder", "pork loin", "ham hock", "bacon bits",
+]
+
+_ALCOHOL_TERMS = [
+    "wine", "beer", "ale", "lager", "stout", "vodka", "whiskey", "whisky",
+    "rum", "sake", "mirin", "brandy", "cognac", "bourbon", "tequila",
+    "champagne", "prosecco", "sherry", "liqueur", "vermouth", "marsala",
+    "amaretto", "schnapps", "absinthe", "mezcal", "scotch", "guinness",
+    "hard cider", "cooking wine", "rice wine", "white wine", "red wine",
+    "pinot", "chardonnay", "cabernet", "merlot", "rosé", "ipa",
+    "vanilla extract", "rum extract", "bourbon extract", "almond extract",
+    "liquor", "alcohol",
+]
+
+_PORK_RE = re.compile(r"\b(" + "|".join(re.escape(t) for t in _PORK_TERMS) + r")\b")
+_ALCOHOL_RE = re.compile(r"\b(" + "|".join(re.escape(t) for t in _ALCOHOL_TERMS) + r")\b")
+
 _KNOWN_HALAL_TAGS = ["vegetarian", "vegan", "gluten-free", "low-carb", "dairy-free"]
 
 
@@ -185,7 +250,9 @@ def _clean(text) -> str:
         return ""
     text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
     text = re.sub(r"<[^>]+>", "", text)
-    return html.unescape(text).strip()
+    text = html.unescape(text)
+    text = text.replace("\u200b", "").replace("\u200c", "").replace("\u200d", "").replace("\ufeff", "")
+    return text.strip()
 
 
 def _int(value):
@@ -344,7 +411,7 @@ def fetch_amiraspantry() -> list[dict]:
             recipes.append({
                 "source": "amiraspantry",
                 "slug": slug,
-                "title": rec.get("name") or _clean((item.get("title") or {}).get("rendered")),
+                "title": _clean(rec.get("name")) or _clean((item.get("title") or {}).get("rendered")),
                 "cuisine": cuisine_name,
                 "cuisine_slug": cuisine_slug,
                 "url": link,
@@ -364,9 +431,136 @@ def fetch_amiraspantry() -> list[dict]:
     return recipes
 
 
+def _slugify(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", (text or "").lower()).strip("-")
+
+
+def _ingredients_safe(ingredients_lower: str) -> bool:
+    if not ingredients_lower:
+        return False  # no ingredient list -> can't verify, skip
+    if _PORK_RE.search(ingredients_lower):
+        return False
+    if _ALCOHOL_RE.search(ingredients_lower):
+        return False
+    return True
+
+
+def _wprm_ingredients_text(recipe_obj: dict) -> str:
+    """Flatten a WP Recipe Maker ingredient list into searchable text."""
+    parts = []
+    for group in recipe_obj.get("ingredients") or []:
+        if isinstance(group, dict):
+            items = group.get("ingredients") or []
+        else:
+            items = group if isinstance(group, list) else []
+        for ing in items:
+            if isinstance(ing, dict):
+                parts.append(str(ing.get("name") or ""))
+                parts.append(str(ing.get("notes") or ""))
+            else:
+                parts.append(str(ing))
+    return " ".join(parts).lower()
+
+
+def _gd_meal_course_ids() -> str:
+    try:
+        resp = requests.get(
+            GD_COURSE_API,
+            headers={"User-Agent": USER_AGENT},
+            timeout=20,
+            params={"per_page": 100, "_fields": "id,slug"},
+        )
+        resp.raise_for_status()
+        by_slug = {t.get("slug"): t.get("id") for t in resp.json() if isinstance(t, dict)}
+        return ",".join(str(by_slug[s]) for s in GD_MEAL_COURSE_SLUGS if s in by_slug)
+    except Exception:
+        logger.warning("Could not resolve Gimme Delicious meal course ids")
+        return ""
+
+
+def fetch_gimmedelicious() -> list[dict]:
+    recipes: list[dict] = []
+    course_param = _gd_meal_course_ids()
+    meal_courses = set(GD_MEAL_COURSE_SLUGS)
+    page = 1
+    while True:
+        params = {
+            "per_page": GD_PER_PAGE,
+            "page": page,
+            "_fields": "slug,link,title,recipe",
+        }
+        if course_param:
+            params["wprm_course"] = course_param
+        resp = requests.get(
+            GD_API,
+            headers={"User-Agent": USER_AGENT},
+            timeout=40,
+            params=params,
+        )
+        if resp.status_code == 400 and page > 1:
+            break
+        resp.raise_for_status()
+        batch = resp.json()
+        if not isinstance(batch, list) or not batch:
+            break
+
+        for item in batch:
+            rec = item.get("recipe") or {}
+            link = item.get("link") or ""
+            slug = link.rstrip("/").split("/")[-1] or item.get("slug")
+            if not slug:
+                continue
+
+            tags_obj = rec.get("tags") or {}
+
+            course_slugs = {t.get("slug") for t in (tags_obj.get("course") or [])}
+            if meal_courses and not (course_slugs & meal_courses):
+                continue
+
+            # Halal by design, but still screen the odd pork/alcohol slip.
+            if not _ingredients_safe(_wprm_ingredients_text(rec)):
+                continue
+
+            cuisine_terms = tags_obj.get("cuisine") or []
+            cuisine_name = cuisine_terms[0].get("name") if cuisine_terms else None
+            raw_cuisine = cuisine_terms[0].get("slug") if cuisine_terms else ""
+            cuisine_slug = (
+                CUISINE_CANON.get(raw_cuisine, _slugify(raw_cuisine))
+                if raw_cuisine else None
+            )
+
+            nutrition = rec.get("nutrition") or {}
+            minutes = rec.get("total_time") or (
+                (_int(rec.get("prep_time")) or 0) + (_int(rec.get("cook_time")) or 0)
+            ) or None
+
+            recipes.append({
+                "source": "gimmedelicious",
+                "slug": slug,
+                "title": _clean(rec.get("name")) or _clean((item.get("title") or {}).get("rendered")),
+                "cuisine": cuisine_name,
+                "cuisine_slug": cuisine_slug,
+                "url": link,
+                "tags": "",
+                "minutes": _int(minutes),
+                "servings": _int(rec.get("servings")),
+                "calories": _int(nutrition.get("calories")),
+                "protein": _int(nutrition.get("protein")),
+                "difficulty": None,
+                "description": _clean(rec.get("summary")),
+            })
+
+        if len(batch) < GD_PER_PAGE:
+            break
+        page += 1
+
+    return recipes
+
+
 SOURCES = {
     "halalmealplan": fetch_halalmealplan,
     "amiraspantry": fetch_amiraspantry,
+    "gimmedelicious": fetch_gimmedelicious,
 }
 
 

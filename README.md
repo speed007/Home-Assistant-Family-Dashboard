@@ -223,17 +223,18 @@ Bulk Clear: Matches clear menu, clear meal plan, reset menu, delete menu.
 🥘 Recipe Ideas:
 
 ```
-Suggests random dinner recipes scraped from halalmealplan.com and Amira's Pantry.
-Only recipes free of pork and alcohol are included. Each recipe is remembered
-and won't be offered again for RECIPE_REPEAT_DAYS (default 28). Suggestions mix
-both sites unless a source is given.
+Suggests random dinner recipes scraped from halalmealplan.com, Amira's Pantry
+and Gimme Delicious. Only recipes free of pork and alcohol are included. Each
+recipe is remembered and won't be offered again for RECIPE_REPEAT_DAYS (default
+28). Suggestions mix all sites unless a source is given.
 
 Triggers: suggest, recommend, recipe, "dinner idea", "what should i cook",
           "give me a recipe", "surprise me" (e.g. suggest dinner).
 
 Sources:  suggest amira             -> only Amira's Pantry
+          suggest gimme             -> only Gimme Delicious
           suggest halal             -> only halalmealplan.com
-          suggest dinner            -> mixes both sites
+          suggest dinner            -> mixes all sites
 
 Filters:  suggest indian            -> by cuisine
           suggest vegetarian        -> by tag (vegan, gluten-free)
